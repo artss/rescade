@@ -39,6 +39,13 @@ The API lives under `/api` and needs `Authorization: Bearer <token>` on every re
 `GET /api/repos`, `GET /api/events?run=|cascade=` (server-sent events). The OpenAPI document is at
 `/api/openapi.json` and Swagger UI at `/api/docs`, both without the token.
 
+## The web interface
+
+The daemon serves it on its own address (`http://127.0.0.1:8765/` by default) when `packages/web` is built
+(`pnpm build`). It asks for the API token once per tab ("Remember" keeps it in the browser) and shows
+cascades, runs with live logs, repos and their locks, and a warning when a config reload failed.
+To work on it, `pnpm --filter @rescade/web dev` serves it with Vite and proxies `/api` to `$RESCADE_URL`.
+
 ## The client
 
     rescade run <cascade> [--detach]    # start and follow; Ctrl+C cancels the run

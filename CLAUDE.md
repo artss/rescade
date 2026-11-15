@@ -22,18 +22,22 @@ SIGHUP, остановка с `interrupted`, чистка истории раз 
 API под `/api`, остальные пути отдают собранный веб-интерфейс с fallback на `index.html`). Срок хранения истории
 и логов `Store.prune`, локи restic `src/restic/lockfiles.ts` (читаются в ensure перед каждым шагом). `packages/cli`: `validate`, `run --local`, а через
 демон `run [--detach]`, `status`, `runs`, `show`, `log`, `cancel`, `repos` (`client.ts` HTTP и SSE, `remote.ts` команды).
+`packages/web`: веб-интерфейс (React, TanStack Query, Tailwind 4, Vite, `wouter`; `api.ts`/`token.ts` запросы и токен,
+`sse.ts` поток событий через fetch, `queries.ts` хуки и `applyEvent`, `log.ts` склейка лога по `id`, `pages/*`), демон
+находит его сборку через `import.meta.resolve("@rescade/web/package.json")`.
 Бэкенды restic (`src/config/backends.ts`: префикс `path`, опции по бэкенду, конфликты `env`/`options` в парах
-`copy`/`from`; описание в `docs/backends.md`). 178 тестов vitest, фейковый restic в `packages/core/test/fake-restic.mjs`, 7 интеграционных с настоящим restic
+`copy`/`from`; описание в `docs/backends.md`). 191 тест vitest (проекты `node` и `web`), фейковый restic в `packages/core/test/fake-restic.mjs`, 7 интеграционных с настоящим restic
 (проверено на 0.19.1), пример в `examples/config`.
 
-Следующий шаг (7): веб-интерфейс.
+Шаги 1–7 из DESIGN.md сделаны. Отложено: экран логов демона, уведомления, веб-редактор конфига.
 
 ## Команды
 
     pnpm install
     pnpm test                # vitest, все пакеты (с фейковым restic)
     pnpm test:integration    # с настоящим restic ($RESCADE_RESTIC или из PATH), ~30 с
-    pnpm build               # сборка (project references), нужна перед запуском CLI
+    pnpm build               # сборка (project references, потом vite для web), нужна перед запуском CLI
+    pnpm --filter @rescade/web dev   # UI на vite с прокси /api на демон ($RESCADE_URL)
     pnpm validate:example    # собирает и валидирует examples/config
     pnpm vitest run -u packages/daemon/test/server.test.ts   # обновить docs/openapi.json после смены API
 
@@ -45,8 +49,11 @@ API под `/api`, остальные пути отдают собранный �
 - Ядро (`core`) без сетевого кода и без обращений к `process` вне CLI/демона. Внешние процессы запускать
   через `spawn` без shell, секреты передавать через окружение процесса, а не через аргументы.
 - Ошибки конфигурации всегда с позицией (файл, строка, колонка). Одна проверка выдаёт как можно больше ошибок за прогон.
-- Тесты демона и CLI берут ядро из исходников: в vitest алиас `@rescade/core` → `packages/core/src`, а CLI в сквозных
+- Тесты демона, CLI и web берут ядро из исходников: в vitest алиас `@rescade/core` → `packages/core/src`, а CLI в сквозных
   тестах запускается как `node --conditions=source --import tsx` (условие `source` в `exports` ядра).
+- `web` берёт из ядра только типы (`import type`): значение из `@rescade/core` притащило бы в бандл Node-код.
+  У `web` свой tsconfig (`Bundler`, DOM, `noEmit`), не в project references; тесты демона в нём подключаются
+  относительным путём, а не зависимостью (демон сам зависит от `@rescade/web`, был бы цикл).
 - Каждое новое поведение сопровождается тестом; для исполнителя нужен фейковый restic, а не настоящий.
 - Без лишних зависимостей и без абстракций «на вырост»: проект маленький, решения должны оставаться простыми.
 - Сообщения коммитов по commitlint (`@commitlint/config-conventional`): `type(scope)?: subject`, тип из `feat`, `fix`,
@@ -88,5 +95,10 @@ API под `/api`, остальные пути отдают собранный �
   (`await app.register(swagger)` до маршрутов).
 - `@fastify/static` 10 передаёт в `setHeaders` `reply`, а не `res`. Его wildcard-маршрут ловит и неизвестные `/api/...`,
   поэтому токен проверяется и по маршруту, и по пути. `inject` читает `//api/...` как URL с хостом `api`.
+- В lib.dom `pipeThrough(new TextDecoderStream())` не сходится по типам с `ReadableStream<Uint8Array>`, поэтому поток
+  событий декодируется `TextDecoder` вручную. `ReadableStream` не везде async-итерируем, читаем через `getReader`.
+- Ответ 401 сбрасывает токен, только если он тот же, с которым ушёл запрос: иначе поздние 401 от неверного токена
+  стирали только что введённый верный.
+- happy-dom в тестах печатает `socket hang up` при отмене fetch (SSE при уходе со страницы), это не ошибка.
 - В режиме `--allow-missing-env` значения подменяются на `<NAME is unset>`: годится для валидации, не для запуска
   (список в `LoadResult.missingEnv`).

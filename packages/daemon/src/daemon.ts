@@ -1,6 +1,7 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import type { Logger } from "pino";
 import {
@@ -32,6 +33,8 @@ export interface Daemon {
 export interface DaemonOptions {
   /** Environment restic starts from. */
   env: Record<string, string | undefined>;
+  /** The built web UI; by default the build of @rescade/web if there is one, `null` for none. */
+  webDir?: string | null;
   killGraceMs?: number;
   heartbeatMs?: number;
 }
@@ -43,6 +46,16 @@ const PRUNE_INTERVAL_MS = 60 * 60 * 1000;
 // the same path from src (tests) and dist
 const VERSION = (JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string })
   .version;
+
+/** The build of @rescade/web, when there is one. */
+function findWebDir(): string | undefined {
+  try {
+    const dir = path.join(path.dirname(fileURLToPath(import.meta.resolve("@rescade/web/package.json"))), "dist");
+    return existsSync(path.join(dir, "index.html")) ? dir : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * Loads the config, opens the history, warms up the repos (fatal errors on reachable repos stop the start),
@@ -118,6 +131,8 @@ export async function startDaemon(settings: Settings, logger: Logger, options: D
     });
     scheduler.update(config.cascades);
 
+    const webDir = options.webDir === undefined ? findWebDir() : (options.webDir ?? undefined);
+    if (webDir === undefined) logger.info("the web UI is not built, serving only the API");
     const hosts = new Set<string>();
     const app = await buildServer({
       config: () => config,
@@ -131,6 +146,7 @@ export async function startDaemon(settings: Settings, logger: Logger, options: D
       corsOrigins: settings.corsOrigins,
       logger,
       heartbeatMs: options.heartbeatMs,
+      webDir,
     });
     const host = settings.host;
     await app.listen({ host, port: settings.port });
