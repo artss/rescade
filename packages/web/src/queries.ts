@@ -1,0 +1,107 @@
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { request } from "./api.js";
+import { mergeLog, type LogData } from "./log.js";
+import type { CascadeView, DaemonStatus, LogRecord, RepoView, RunRecord, RunWithSteps, ServerEvent, StepRecord } from "./types.js";
+
+export const keys = {
+  status: ["status"] as const,
+  cascades: ["cascades"] as const,
+  runs: (cascade?: string) => ["runs", cascade ?? null] as const,
+  allRuns: ["runs"] as const,
+  run: (id: number) => ["run", id] as const,
+  log: (id: number) => ["log", id] as const,
+  repos: ["repos"] as const,
+};
+
+const PAGE = 50;
+
+export const isActive = (status: RunRecord["status"]) => status === "running" || status === "queued";
+
+/** Applies an event to the cached answers; lists that an event changes in more ways than one are asked for again. */
+export function applyEvent(qc: QueryClient, e: ServerEvent): void {
+  switch (e.kind) {
+    case "run":
+      qc.setQueryData<RunWithSteps>(keys.run(e.run.id), (old) => old && { ...e.run, steps: old.steps });
+      void qc.invalidateQueries({ queryKey: keys.cascades });
+      void qc.invalidateQueries({ queryKey: keys.allRuns });
+      return;
+    case "step":
+      qc.setQueryData<RunWithSteps>(keys.run(e.step.runId), (old) => old && { ...old, steps: withStep(old.steps, e.step) });
+      // steps take and release repos
+      void qc.invalidateQueries({ queryKey: keys.repos });
+      return;
+    case "log": {
+      // only for a log someone is looking at
+      const key = keys.log(e.runId);
+      if (qc.getQueryState(key) === undefined) return;
+      qc.setQueryData<LogData>(key, (old) => ({ lines: mergeLog(old?.lines ?? [], [e.log]), complete: old?.complete ?? false }));
+      return;
+    }
+    case "repo":
+      void qc.invalidateQueries({ queryKey: keys.repos });
+      return;
+  }
+}
+
+function withStep(steps: StepRecord[], step: StepRecord): StepRecord[] {
+  const i = steps.findIndex((s) => s.index === step.index);
+  if (i >= 0) return steps.map((s, j) => (j === i ? step : s));
+  return [...steps, step].sort((a, b) => a.index - b.index);
+}
+
+// a reload sends no event, so the status is polled
+export const useStatus = () =>
+  useQuery({ queryKey: keys.status, queryFn: () => request<DaemonStatus>("GET", "/status"), refetchInterval: 30_000 });
+
+export const useCascades = () =>
+  useQuery({ queryKey: keys.cascades, queryFn: () => request<CascadeView[]>("GET", "/cascades") });
+
+export const useRepos = () => useQuery({ queryKey: keys.repos, queryFn: () => request<RepoView[]>("GET", "/repos") });
+
+export const useRun = (id: number) =>
+  useQuery({ queryKey: keys.run(id), queryFn: () => request<RunWithSteps>("GET", `/runs/${id}`) });
+
+/** Runs newest first, a page at a time. */
+export function useRuns(cascade?: string) {
+  return useInfiniteQuery({
+    queryKey: keys.runs(cascade),
+    initialPageParam: undefined as number | undefined,
+    queryFn: ({ pageParam }) => {
+      const params = new URLSearchParams({ limit: String(PAGE) });
+      if (cascade !== undefined) params.set("cascade", cascade);
+      if (pageParam !== undefined) params.set("before", String(pageParam));
+      return request<RunRecord[]>("GET", `/runs?${params}`);
+    },
+    getNextPageParam: (last) => (last.length < PAGE ? undefined : last.at(-1)?.id),
+  });
+}
+
+/**
+ * A run's log. Lines from events are merged in as they come (see `applyEvent`), so fetching again after a
+ * reconnect only asks for what came after the last line, once the whole log was fetched.
+ */
+export function useLog(id: number) {
+  const qc = useQueryClient();
+  const key = keys.log(id);
+  return useQuery({
+    queryKey: key,
+    queryFn: async () => {
+      const have = qc.getQueryData<LogData>(key);
+      const after = have?.complete ? have.lines.at(-1)?.id : undefined;
+      const lines = await request<LogRecord[]>("GET", `/runs/${id}/log${after === undefined ? "" : `?after=${after}`}`);
+      // read again: events may have come during the request
+      return { lines: mergeLog(qc.getQueryData<LogData>(key)?.lines ?? [], lines), complete: true } satisfies LogData;
+    },
+  });
+}
+
+export function useStartRun() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (cascade: string) => request<RunRecord>("POST", `/cascades/${encodeURIComponent(cascade)}/run`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.cascades }),
+  });
+}
+
+export const useCancelRun = () =>
+  useMutation({ mutationFn: (id: number) => request<{ cancelling: boolean }>("POST", `/runs/${id}/cancel`) });

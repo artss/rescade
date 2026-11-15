@@ -1,4 +1,4 @@
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Writable } from "node:stream";
 import { pino } from "pino";
@@ -48,6 +48,7 @@ async function start(
   yaml = configYaml(),
   env: Record<string, string> = {},
   extra: Partial<Settings> = {},
+  webDir: string | null = null,
 ): Promise<Daemon> {
   const configFile = path.join(fake.dir, "rescade.yaml");
   await writeFile(configFile, yaml);
@@ -73,6 +74,7 @@ async function start(
     env: fake.env(env),
     killGraceMs: 500,
     heartbeatMs: 50,
+    webDir,
   });
   return daemon;
 }
@@ -139,6 +141,22 @@ describe("startup", () => {
     await start();
     const { body } = await api("GET", `/api/runs/${left.id}`);
     expect(body).toMatchObject({ status: "interrupted", reason: "the daemon stopped during the run" });
+  });
+
+  it("serves the web UI next to the API when it is built", async () => {
+    const webDir = path.join(fake.dir, "web");
+    await mkdir(webDir);
+    await writeFile(path.join(webDir, "index.html"), "<title>rescade</title>");
+    await start(undefined, {}, {}, webDir);
+    const port = daemon!.address.split(":").at(-1);
+    const res = await daemon!.app.inject({ method: "GET", url: "/runs/1", headers: { host: `127.0.0.1:${port}` } });
+    expect(res.body).toContain("<title>rescade</title>");
+    expect((await api("GET", "/api/runs")).status).toBe(200);
+    await daemon!.stop();
+
+    await start();
+    expect(logs.some((l) => l.msg === "the web UI is not built, serving only the API")).toBe(true);
+    expect((await api("GET", "/", { authorization: "" })).status).toBe(404);
   });
 
   it("deletes old history at start", async () => {
