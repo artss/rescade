@@ -1,9 +1,9 @@
-import { execFileSync } from "node:child_process";
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { execFileSync, spawn } from "node:child_process";
+import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { runCascade, type Cascade, type Config, type RunEvent, type Step } from "../src/index.js";
+import { ensureRepo, runCascade, type Cascade, type Config, type RunEvent, type Step } from "../src/index.js";
 import { repo } from "./helpers/fake.js";
 
 const RESTIC = process.env.RESCADE_RESTIC ?? "restic";
@@ -136,6 +136,27 @@ describe("with real restic", () => {
     expect(result.steps[0]?.status).toBe("warning");
     expect(result.steps[0]?.reason).toMatch(/^chunker parameters differ: "a" has \w+, "c" has \w+/);
     expect(snapshots("c").length).toBeGreaterThan(0);
+  });
+
+  it("finds the lock left by a killed restic", async () => {
+    const repos = config([]).repos;
+    const a = repos.a!;
+    const child = spawn(RESTIC, ["backup", "-q", "--stdin-from-command", "--", "sleep", "30"], {
+      env: { ...env, RESTIC_REPOSITORY: a.path, RESTIC_PASSWORD: a.password },
+      stdio: "ignore",
+    });
+    const locksDir = path.join(a.path, "locks");
+    const deadline = Date.now() + 10_000;
+    while ((await readdir(locksDir)).length === 0) {
+      if (Date.now() > deadline) throw new Error("restic did not take a lock");
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    child.kill("SIGKILL");
+    await new Promise((resolve) => child.once("close", resolve));
+
+    const r = await ensureRepo({ binary: RESTIC, env, repos }, "a", () => {});
+    expect(r).toMatchObject({ ok: true, locks: { count: 1, locks: [{ exclusive: false, pid: child.pid, stale: false }] } });
+    execFileSync(RESTIC, ["unlock", "--remove-all"], { env: { ...env, RESTIC_REPOSITORY: a.path, RESTIC_PASSWORD: a.password } });
   });
 
   it("reports a failing backup with restic's own message, not JSON", async () => {

@@ -91,6 +91,10 @@ export function execRestic(
 
 export const catConfigArgs = (): string[] => ["cat", "config"];
 
+/** Lock files are read without taking a lock of our own. */
+export const listLocksArgs = (): string[] => ["list", "locks", "--no-lock"];
+export const catLockArgs = (id: string): string[] => ["cat", "lock", "--no-lock", id];
+
 /** With `fromRepo`, the source comes from RESTIC_FROM_REPOSITORY. */
 export const initArgs = (fromRepo: boolean): string[] => (fromRepo ? ["init", "--copy-chunker-params"] : ["init"]);
 

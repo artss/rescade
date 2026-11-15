@@ -134,12 +134,24 @@ describe("the CLI through the daemon", () => {
     expect(second.stderr).toMatch(new RegExp(`skipped: run ${id} of this cascade is still in progress`));
 
     const repos = await cli(["repos"]);
-    expect(repos.stdout).toMatch(new RegExp(`^b +ok +\\S+ \\S+ +run ${id} \\(slow\\) +/r/b$`, "m"));
+    expect(repos.stdout).toMatch(new RegExp(`^b +ok +\\S+ \\S+ +run ${id} \\(slow\\) +0 +/r/b$`, "m"));
 
     expect((await cli(["cancel", String(id)])).stdout).toBe(`cancelling run ${id}\n`);
     const again = await cli(["cancel", "999"]);
     expect(again.code).toBe(1);
     expect(again.stderr).toBe("rescade: no run 999\n");
+  });
+
+  it("shows restic locks found before a step", async () => {
+    const id = "ab".repeat(32);
+    const time = new Date(Date.now() - 2 * 3_600_000).toISOString();
+    fake.writeLocks("/r/a", [{ id, time, exclusive: true, hostname: "nas", username: "root", pid: 42 }]);
+    expect((await cli(["run", "daily"])).code).toBe(0);
+
+    const repos = await cli(["repos"]);
+    expect(repos.stdout).toMatch(/^a +ok +\S+ \S+ +- +1 \(1 stale\) +\/r\/a$/m);
+    expect(repos.stdout).toMatch(/^a: lock abababab \(exclusive, stale\) by root@nas pid 42 at \S+ \S+$/m);
+    expect(repos.stdout).toContain('run "restic unlock"');
   });
 
   it("cancels the followed run on Ctrl+C", async () => {

@@ -1,4 +1,4 @@
-import { formatDuration, type LogRecord, type RunRecord, type StepRecord } from "@rescade/core";
+import { formatDuration, type LogRecord, type RepoLockList, type RunRecord, type StepRecord } from "@rescade/core";
 import type { ApiClient, ServerEvent } from "./client.js";
 import { formatTime, logLine, RUN_EXIT, stepLine, table } from "./output.js";
 
@@ -21,6 +21,7 @@ interface RepoView {
   state: string;
   reason?: string;
   checkedAt?: number;
+  locks?: RepoLockList;
   lockedBy?: { runId: number; cascade: string };
 }
 
@@ -206,12 +207,33 @@ export async function listRepos(client: ApiClient, json: boolean): Promise<numbe
     print(repos);
     return 0;
   }
-  const rows = [["REPO", "STATE", "CHECKED", "LOCKED BY", "LOCATION"]];
+  const rows = [["REPO", "STATE", "CHECKED", "LOCKED BY", "RESTIC LOCKS", "LOCATION"]];
   for (const r of repos) {
     const locked = r.lockedBy ? `run ${r.lockedBy.runId} (${r.lockedBy.cascade})` : "-";
-    rows.push([r.name, r.state, r.checkedAt === undefined ? "-" : formatTime(r.checkedAt), locked, r.location]);
+    rows.push([r.name, r.state, r.checkedAt === undefined ? "-" : formatTime(r.checkedAt), locked, lockCount(r.locks), r.location]);
   }
   console.log(table(rows));
-  for (const r of repos) if (r.reason !== undefined) console.log(`${r.name}: ${r.reason}`);
+  for (const r of repos) {
+    if (r.reason !== undefined) console.log(`${r.name}: ${r.reason}`);
+    if (!r.locks) continue;
+    for (const l of r.locks.locks) {
+      const kind = `${l.exclusive ? "exclusive" : "shared"}${l.stale ? ", stale" : ""}`;
+      console.log(`${r.name}: lock ${l.id.slice(0, 8)} (${kind}) by ${l.username}@${l.hostname} pid ${l.pid} at ${formatTime(l.time)}`);
+    }
+    const unread = r.locks.count - r.locks.locks.length;
+    if (unread > 0 && r.locks.error === undefined) console.log(`${r.name}: ${unread} more locks`);
+    if (r.locks.error !== undefined) console.log(`${r.name}: ${r.locks.error}`);
+  }
+  if (repos.some((r) => r.locks?.locks.some((l) => l.stale))) {
+    console.log('stale locks are left by restic that did not finish; check nothing uses the repo, then run "restic unlock"');
+  }
   return 0;
+}
+
+/** "-", "2", "2 (1 stale)"; "?" when the locks could not be read. */
+function lockCount(locks: RepoLockList | undefined): string {
+  if (!locks) return "-";
+  if (locks.error !== undefined && locks.count === 0) return "?";
+  const stale = locks.locks.filter((l) => l.stale).length;
+  return stale > 0 ? `${locks.count} (${stale} stale)` : String(locks.count);
 }

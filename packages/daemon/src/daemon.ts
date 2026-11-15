@@ -37,6 +37,8 @@ export interface DaemonOptions {
 
 export class StartupError extends Error {}
 
+const PRUNE_INTERVAL_MS = 60 * 60 * 1000;
+
 /**
  * Loads the config, opens the history, warms up the repos (fatal errors on reachable repos stop the start),
  * then starts the runner, the scheduler and the API.
@@ -47,9 +49,20 @@ export async function startDaemon(settings: Settings, logger: Logger, options: D
 
   await mkdir(settings.dataDir, { recursive: true, mode: 0o700 });
   const store = await Store.open(path.join(settings.dataDir, "rescade.db"));
+  let pruneTimer: NodeJS.Timeout | undefined;
   try {
     const interrupted = store.markInterrupted(Date.now());
     if (interrupted > 0) logger.warn({ runs: interrupted }, "marked runs left from the previous start as interrupted");
+    const prune = () => {
+      try {
+        const r = store.prune({ now: Date.now(), historyMs: settings.historyRetentionMs, logMs: settings.logRetentionMs });
+        if (r.runs > 0 || r.logLines > 0) logger.info(r, "deleted old history");
+      } catch (e) {
+        logger.error({ err: e }, "could not delete old history");
+      }
+    };
+    prune();
+    pruneTimer = setInterval(prune, PRUNE_INTERVAL_MS).unref();
 
     const repos = new RepoStates();
     const resticCtx = {
@@ -62,7 +75,12 @@ export async function startDaemon(settings: Settings, logger: Logger, options: D
     logger.info({ repos: Object.keys(config.repos).length }, "checking repos");
     const warm = await warmUp(config, resticCtx, (repo, line) => logger.info({ repo }, line));
     for (const [repo, r] of warm.results) {
-      if (r.ok) logger.info({ repo, initialized: r.initialized }, "repo is ready");
+      if (r.ok) {
+        logger.info({ repo, initialized: r.initialized }, "repo is ready");
+        const stale = r.locks.locks.filter((l) => l.stale);
+        if (stale.length > 0) logger.warn({ repo, locks: stale.map((l) => l.id) }, "repo has stale locks");
+        if (r.locks.error !== undefined) logger.warn({ repo }, r.locks.error);
+      }
       else logger.warn({ repo, problem: r.problem }, r.reason);
     }
     for (const m of warm.mismatches) logger.warn(m);
@@ -133,6 +151,7 @@ export async function startDaemon(settings: Settings, logger: Logger, options: D
         stopping ??= (async () => {
           logger.info("stopping");
           scheduler.stop();
+          clearInterval(pruneTimer);
           await runner.stop();
           await app.close();
           store.close();
@@ -142,6 +161,7 @@ export async function startDaemon(settings: Settings, logger: Logger, options: D
       },
     };
   } catch (e) {
+    clearInterval(pruneTimer);
     store.close();
     throw e;
   }

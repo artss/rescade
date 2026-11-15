@@ -7,6 +7,7 @@ import {
   initArgs,
   type ResticContext,
 } from "./restic.js";
+import { readLocks, type RepoLockList } from "./lockfiles.js";
 import type { ProcessResult } from "./process.js";
 
 /** The parts of `restic cat config` rescade cares about. */
@@ -17,9 +18,11 @@ export interface RepoConfig {
 
 export type RepoProblem = "unreachable" | "wrong-password" | "init-failed" | "error" | "cancelled";
 
-export type EnsureResult =
-  | { ok: true; config: RepoConfig; initialized: boolean }
-  | { ok: false; problem: RepoProblem; reason: string };
+type Failure = { ok: false; problem: RepoProblem; reason: string };
+
+export type EnsureResult = { ok: true; config: RepoConfig; initialized: boolean; locks: RepoLockList } | Failure;
+
+type ConfigResult = { ok: true; config: RepoConfig } | Failure;
 
 /** Within one step a repo is checked once (copy may reach the same repo as target and as `from`). */
 export type EnsureMemo = Map<string, Promise<EnsureResult>>;
@@ -58,7 +61,12 @@ async function ensure(
   if (!repo) return { ok: false, problem: "error", reason: `unknown repo "${name}"` };
 
   const first = await readConfig(ctx, name);
-  if (first !== "missing") return first;
+  if (first !== "missing") {
+    if (!first.ok) return first;
+    const locks = await readLocks(ctx, name);
+    if (locks === "cancelled") return { ok: false, problem: "cancelled", reason: "cancelled" };
+    return { ...first, initialized: false, locks };
+  }
 
   if (repo.from !== undefined) {
     const source = await ensureRepo(ctx, repo.from, log, memo);
@@ -91,10 +99,10 @@ async function ensure(
   if (second === "missing") {
     return { ok: false, problem: "init-failed", reason: `repo "${name}" still does not exist after restic init` };
   }
-  return second.ok ? { ...second, initialized: true } : second;
+  return second.ok ? { ...second, initialized: true, locks: { count: 0, locks: [] } } : second;
 }
 
-async function readConfig(ctx: ResticContext, name: string): Promise<EnsureResult | "missing"> {
+async function readConfig(ctx: ResticContext, name: string): Promise<ConfigResult | "missing"> {
   const stdout: string[] = [];
   const timeoutMs = ctx.repoCheckTimeoutMs ?? DEFAULT_REPO_CHECK_TIMEOUT_MS;
   const r = await execRestic(ctx, name, catConfigArgs(), {
@@ -128,7 +136,7 @@ async function readConfig(ctx: ResticContext, name: string): Promise<EnsureResul
   try {
     const parsed = JSON.parse(stdout.join("\n")) as { id?: unknown; chunker_polynomial?: unknown };
     if (typeof parsed.id === "string" && typeof parsed.chunker_polynomial === "string") {
-      return { ok: true, config: { id: parsed.id, chunkerPolynomial: parsed.chunker_polynomial }, initialized: false };
+      return { ok: true, config: { id: parsed.id, chunkerPolynomial: parsed.chunker_polynomial } };
     }
   } catch {
     // reported below

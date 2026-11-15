@@ -35,11 +35,21 @@ describe("daemon settings", () => {
       restic: "restic",
       token: "t",
       repoCheckTimeoutMs: 30_000,
+      historyRetentionMs: 180 * 86_400_000,
+      logRetentionMs: 30 * 86_400_000,
       logLevel: "info",
       extraHosts: [],
     });
     expect(s !== "help" && [...s.corsOrigins]).toEqual(["https://a", "https://b"]);
     expect(warnings).toEqual([]);
+  });
+
+  it("reads the retention periods, 0 meaning no limit", async () => {
+    const s = await readSettings([], { RESCADE_TOKEN: "t", RESCADE_HISTORY_RETENTION: "0", RESCADE_LOG_RETENTION: "12h" }, () => {});
+    expect(s).toMatchObject({ historyRetentionMs: undefined, logRetentionMs: 12 * 3_600_000 });
+    await expect(readSettings([], { RESCADE_TOKEN: "t", RESCADE_LOG_RETENTION: "month" }, () => {})).rejects.toThrow(
+      'RESCADE_LOG_RETENTION: expected a duration such as "30s", "5m" or "90d", got "month"',
+    );
   });
 
   it("reads the token from a file and warns when others can read it", async () => {
