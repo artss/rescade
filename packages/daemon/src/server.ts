@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import swagger from "@fastify/swagger";
+import swaggerUi from "@fastify/swagger-ui";
 import Fastify, { LogController, type FastifyBaseLogger, type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { describeStep, type Config, type Runner, type RunnerEvent, type Scheduler, type Store } from "@rescade/core";
 import type { RepoStates } from "./repos.js";
@@ -40,12 +41,16 @@ function responses(code: number, description: string, schema: object, ...errors:
   return r;
 }
 
-/** Served without the token (it holds no secrets), but behind the Host check. */
+/** Served without the token (they hold no secrets; a browser cannot send it), but behind the Host check. */
 export const OPENAPI_PATH = "/openapi.json";
+export const DOCS_PATH = "/docs";
+
+const isPublic = (route: string | undefined): boolean =>
+  route === OPENAPI_PATH || route === DOCS_PATH || route?.startsWith(`${DOCS_PATH}/`) === true;
 
 /**
  * The HTTP API. Every request needs the Host check and the bearer token, except CORS preflight
- * and the OpenAPI document.
+ * and the OpenAPI document with Swagger UI.
  */
 export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   const app = Fastify({
@@ -71,6 +76,8 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     // components named by $id instead of def-0, def-1...
     refResolver: { buildLocalReference: (json, _base, _fragment, i) => String(json.$id ?? `def-${i}`) },
   });
+  // the token for "Try it out" is entered with Authorize
+  await app.register(swaggerUi, { routePrefix: DOCS_PATH });
   for (const schema of schemas) app.addSchema(schema);
 
   const expected = digest(deps.token);
@@ -90,7 +97,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
           .send();
       }
     }
-    if (request.routeOptions.url === OPENAPI_PATH) return;
+    if (isPublic(request.routeOptions.url)) return;
 
     const auth = request.headers.authorization ?? "";
     const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";

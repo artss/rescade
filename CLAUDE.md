@@ -18,11 +18,11 @@
 Прогрев репо при старте (`src/restic/warmup.ts`), чтение токена (`src/token.ts`).
 `packages/daemon`: `rescaded` (`settings.ts` флаги/env/токен/Host, `server.ts` Fastify-маршруты и SSE, `daemon.ts` запуск,
 SIGHUP, остановка с `interrupted`, чистка истории раз в час, `repos.ts` состояние репо в памяти, `schemas.ts` схемы
-ответов для сериализации и `GET /openapi.json` без токена; копия в `docs/openapi.json`). Срок хранения истории
+ответов для сериализации и `GET /openapi.json` и Swagger UI на `/docs` без токена; копия в `docs/openapi.json`). Срок хранения истории
 и логов `Store.prune`, локи restic `src/restic/lockfiles.ts` (читаются в ensure перед каждым шагом). `packages/cli`: `validate`, `run --local`, а через
 демон `run [--detach]`, `status`, `runs`, `show`, `log`, `cancel`, `repos` (`client.ts` HTTP и SSE, `remote.ts` команды).
 Бэкенды restic (`src/config/backends.ts`: префикс `path`, опции по бэкенду, конфликты `env`/`options` в парах
-`copy`/`from`; описание в `docs/backends.md`). 170 тестов vitest, фейковый restic в `packages/core/test/fake-restic.mjs`, 7 интеграционных с настоящим restic
+`copy`/`from`; описание в `docs/backends.md`). 171 тест vitest, фейковый restic в `packages/core/test/fake-restic.mjs`, 7 интеграционных с настоящим restic
 (проверено на 0.19.1), пример в `examples/config`.
 
 Следующий шаг (7): веб-интерфейс.

@@ -20,7 +20,7 @@
 - `web`: позже
 
 Библиотеки: `yaml` (позиции узлов), `zod` (схема), `croner` (cron), встроенный `node:sqlite` (Node >= 22.13),
-Fastify (+ `@fastify/swagger`: OpenAPI по схемам маршрутов), `pino`. Логи демона в JSON (stdout): они понадобятся веб-интерфейсу.
+Fastify (+ `@fastify/swagger`: OpenAPI по схемам маршрутов, `@fastify/swagger-ui`), `pino`. Логи демона в JSON (stdout): они понадобятся веб-интерфейсу.
 
 ## Конфиг
 
@@ -104,13 +104,14 @@ Fastify (+ `@fastify/swagger`: OpenAPI по схемам маршрутов), `p
 - Клиент ищет токен: `--token-file`, `RESCADE_TOKEN`, `RESCADE_TOKEN_FILE`, `~/.config/rescade/token`. Сервер: `--token-file`,
   `RESCADE_TOKEN`, `RESCADE_TOKEN_FILE`, `/etc/rescade/token`. Предупреждение, если права на файл слишком широкие.
 - Эндпоинты: `GET /cascades`, `GET /runs`, `GET /runs/:id`, `GET /runs/:id/log?step=`, `POST /cascades/:name/run`,
-  `POST /runs/:id/cancel`, `GET /repos`, `GET /events` (SSE), `GET /openapi.json`. Перезагрузка конфига по SIGHUP; ошибка в новом конфиге
+  `POST /runs/:id/cancel`, `GET /repos`, `GET /events` (SSE), `GET /openapi.json`, Swagger UI на `/docs`. Перезагрузка конфига по SIGHUP; ошибка в новом конфиге
   оставляет старый. Запуски, уже идущие, доживают со старым конфигом.
 - `GET /events`: события `run`, `step`, `log`, `repo`. Фильтры `?run=<id>` и `?cascade=<name>` (тогда без `repo`).
   `rescade run` сначала подписывается на `?cascade=`, потом делает POST: так не теряются события, пришедшие раньше ответа.
-- `GET /openapi.json` (OpenAPI 3.1) отдаётся без токена (секретов в нём нет; при необходимости закрывается
-  обратным прокси), проверка `Host` остаётся. Схемы ответов (`packages/daemon/src/schemas.ts`) заданы у каждого
-  маршрута: по ним Fastify сериализует ответы, они же становятся компонентами документа. Swagger UI не встроен.
+- `GET /openapi.json` (OpenAPI 3.1) и Swagger UI (`/docs/*`) отдаются без токена (секретов в них нет, а браузер
+  не пошлёт `Authorization` при открытии страницы; при необходимости закрываются обратным прокси), проверка `Host`
+  остаётся. Токен для «Try it out» вводится через Authorize. Схемы ответов (`packages/daemon/src/schemas.ts`) заданы у каждого
+  маршрута: по ним Fastify сериализует ответы, они же становятся компонентами документа.
   Копия документа лежит в `docs/openapi.json`, тест следит, чтобы она совпадала с отдаваемой.
 - Ошибки API: `{ "error": "..." }`; 400 неверные параметры, 401 токен, 403 `Host`, 404, 409 отмена незапущенного, 503 демон
   останавливается. Пароли в URL репо (`rest:https://user:pass@...`) в `GET /repos` скрываются.

@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@fastify/swagger": "^9.9.4",
+    "@fastify/swagger-ui": "^6.1.4",
     "@rescade/core": "workspace:*",
     "fastify": "^5.12.8",
     "pino": "^10.4.0"

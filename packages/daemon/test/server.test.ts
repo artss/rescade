@@ -6,7 +6,7 @@ import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { loadConfig, type Config, type LogRecord, type RunRecord, type StepRecord } from "@rescade/core";
 import { RepoStates } from "../src/repos.js";
-import { buildServer, OPENAPI_PATH, type ServerDeps } from "../src/server.js";
+import { buildServer, DOCS_PATH, OPENAPI_PATH, type ServerDeps } from "../src/server.js";
 
 const TOKEN = "test-token-0123456789";
 const HOST = "localhost:8765";
@@ -150,6 +150,17 @@ describe("OpenAPI document", () => {
     expect(res.body.openapi).toBe("3.1.0");
     expect((await call("GET", OPENAPI_PATH, { authorization: "", host: "evil.example" })).status).toBe(403);
     expect((await call("GET", "/runs", { authorization: "" })).status).toBe(401);
+  });
+
+  it("shows Swagger UI without the token but behind the Host check", async () => {
+    const get = (url: string, host = HOST) => app.inject({ method: "GET", url, headers: { host } });
+    const page = await get(`${DOCS_PATH}/`);
+    expect(page.statusCode).toBe(200);
+    expect(page.headers["content-type"]).toContain("text/html");
+    const initializer = await get(`${DOCS_PATH}/static/swagger-initializer.js`);
+    expect(initializer.statusCode).toBe(200);
+    expect((await get(`${DOCS_PATH}/json`)).json().paths["/runs"]).toBeDefined();
+    expect((await get(`${DOCS_PATH}/`, "evil.example")).statusCode).toBe(403);
   });
 
   it("describes every route with its responses", async () => {
