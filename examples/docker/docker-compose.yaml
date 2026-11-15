@@ -1,0 +1,47 @@
+# rescade in Docker: the daemon with its web UI on http://127.0.0.1:8765/, the CLI through `docker compose exec`.
+#
+#   openssl rand -hex 32 > token && chmod 600 token     # the API token, also typed into the web UI
+#   cp rescade.env.example rescade.env && chmod 600 rescade.env   # repo passwords
+#   docker compose up -d
+#   docker compose exec rescade rescade status
+#   docker compose kill -s HUP rescade                  # reread the config after editing it
+
+services:
+  rescade:
+    image: ghcr.io/artss/rescade:latest
+    restart: unless-stopped
+    # restic writes the host name into each snapshot and finds the parent snapshot by host and paths;
+    # a container gets a new name when recreated, and every backup would read all files again
+    hostname: myserver
+    # more than restic's 30 s between SIGTERM and SIGKILL, so runs end as interrupted and keep their state
+    stop_grace_period: 1m
+    ports:
+      - "127.0.0.1:8765:8765"
+    environment:
+      TZ: Europe/Berlin
+      # another published port or a host name for the UI: list the Host values here
+      # RESCADE_ALLOWED_HOSTS: backup.lan:8765
+    env_file: rescade.env
+    secrets:
+      - rescade_token
+    volumes:
+      - ./config:/etc/rescade/config:ro
+      # history, logs and restic's cache
+      - rescade-data:/var/lib/rescade
+      # the key and known_hosts for sftp repos
+      - ./ssh:/root/.ssh:ro
+      # a local repo
+      - /mnt/backups:/backups
+      # Backup sources, read-only. You choose where they go inside the container, but the path must not
+      # collide with the image's own (/etc, /usr, /var/lib/rescade, ...) and must not change later:
+      # snapshots record it, and a new path makes the next backup read everything again.
+      # A /host prefix is a safe choice; restore with `restic restore <id>:/host/home --target /home`.
+      - /home:/host/home:ro
+      - /etc:/host/etc:ro
+
+secrets:
+  rescade_token:
+    file: ./token
+
+volumes:
+  rescade-data:

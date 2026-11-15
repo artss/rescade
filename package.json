@@ -10,7 +10,7 @@
     "build": "tsc -b && pnpm --filter @rescade/web build",
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",
-    "validate:example": "tsc -b && node packages/cli/dist/index.js validate --config-dir examples/config --allow-missing-env"
+    "validate:example": "tsc -b && node packages/cli/dist/index.js validate --config-dir examples/config --allow-missing-env && node packages/cli/dist/index.js validate --config-dir examples/docker/config --allow-missing-env"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
