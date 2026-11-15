@@ -17,14 +17,15 @@
 события), планировщик (`src/schedule.ts`, croner), хранилище (`src/store/store.ts`, `node:sqlite`).
 Прогрев репо при старте (`src/restic/warmup.ts`), чтение токена (`src/token.ts`).
 `packages/daemon`: `rescaded` (`settings.ts` флаги/env/токен/Host, `server.ts` Fastify-маршруты и SSE, `daemon.ts` запуск,
-SIGHUP, остановка с `interrupted`, чистка истории раз в час, `repos.ts` состояние репо в памяти). Срок хранения истории
+SIGHUP, остановка с `interrupted`, чистка истории раз в час, `repos.ts` состояние репо в памяти, `schemas.ts` схемы
+ответов для сериализации и `GET /openapi.json` без токена; копия в `docs/openapi.json`). Срок хранения истории
 и логов `Store.prune`, локи restic `src/restic/lockfiles.ts` (читаются в ensure перед каждым шагом). `packages/cli`: `validate`, `run --local`, а через
 демон `run [--detach]`, `status`, `runs`, `show`, `log`, `cancel`, `repos` (`client.ts` HTTP и SSE, `remote.ts` команды).
 Бэкенды restic (`src/config/backends.ts`: префикс `path`, опции по бэкенду, конфликты `env`/`options` в парах
-`copy`/`from`; описание в `docs/backends.md`). 159 тестов vitest, фейковый restic в `packages/core/test/fake-restic.mjs`, 7 интеграционных с настоящим restic
+`copy`/`from`; описание в `docs/backends.md`). 170 тестов vitest, фейковый restic в `packages/core/test/fake-restic.mjs`, 7 интеграционных с настоящим restic
 (проверено на 0.19.1), пример в `examples/config`.
 
-Следующий шаг (6): swagger (OpenAPI по схемам маршрутов), потом (7) веб-интерфейс.
+Следующий шаг (7): веб-интерфейс.
 
 ## Команды
 
@@ -33,6 +34,7 @@ SIGHUP, остановка с `interrupted`, чистка истории раз 
     pnpm test:integration    # с настоящим restic ($RESCADE_RESTIC или из PATH), ~30 с
     pnpm build               # сборка (project references), нужна перед запуском CLI
     pnpm validate:example    # собирает и валидирует examples/config
+    pnpm vitest run -u packages/daemon/test/server.test.ts   # обновить docs/openapi.json после смены API
 
 ## Соглашения
 
@@ -78,5 +80,10 @@ SIGHUP, остановка с `interrupted`, чистка истории раз 
   чужого бэкенда (`-o s3.region` у sftp) молча игнорирует; неизвестная опция своего бэкенда = `Fatal`.
 - `copy` и `init --from-repo` идут одним процессом: свои переменные у источника только `RESTIC_FROM_REPOSITORY*`/`PASSWORD*`,
   ключи бэкенда (`AWS_*` и т. п.) и `-o` общие на оба репо.
+- Fastify сериализует ответ по схеме маршрута и молча выбрасывает поля, которых в схеме нет. Новое поле в
+  `RunRecord`/`StepRecord`/`RepoView` и т. п. надо добавить в `schemas.ts`, иначе клиент его не увидит; `server.test.ts`
+  сверяет ответы на полностью заполненных записях с тем, что вернул обработчик.
+- `@fastify/swagger` видит только маршруты, объявленные после его загрузки, поэтому `buildServer` асинхронная
+  (`await app.register(swagger)` до маршрутов).
 - В режиме `--allow-missing-env` значения подменяются на `<NAME is unset>`: годится для валидации, не для запуска
   (список в `LoadResult.missingEnv`).
