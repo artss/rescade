@@ -1,0 +1,9 @@
+{
+  "name": "@rescade/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": { "rescade": "./dist/index.js" },
+  "scripts": { "build": "tsc -b" },
+  "dependencies": { "@rescade/core": "workspace:*" }
+}

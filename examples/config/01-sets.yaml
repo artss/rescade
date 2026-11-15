@@ -1,0 +1,15 @@
+sets:
+  system:
+    include: [/boot, /etc, /opt, /root, /srv, /usr/share, /var]
+    exclude: [/var/run]
+
+  home:
+    include: [/home/arts]
+    exclude: [/home/arts/tmp, /home/arts/projects]
+
+  projects:
+    include: [/home/arts/projects]
+    exclude:
+      - "**/venv"
+      - "**/node_modules"
+      - "**/*.bak"

@@ -1,0 +1,34 @@
+chains:
+  system:
+    description: System files, copied to both remotes
+    schedule: "0 */4 * * *"
+    on-busy: skip
+    steps:
+      - run:
+          command: [/usr/local/bin/dump-databases.sh]
+          timeout: 10m
+      - backup: { set: system, repo: system-local }
+      - retain: { repo: system-local }
+      - check: { repo: system-local, read-data-subset: 5% }
+      - copy: { from: system-local, to: system-i1 }
+      - retain: { repo: system-i1 }
+      - copy: { from: system-i1, to: system-i2 }
+      - retain: { repo: system-i2 }
+
+  home:
+    schedule: "0 */6 * * *"
+    steps:
+      - backup: { set: home, repo: home-local }
+      - retain: { repo: home-local }
+      - copy: { from: home-local, to: home-i1 }
+      - retain: { repo: home-i1 }
+
+  maintenance:
+    description: Weekly prune, run on its own because prune takes an exclusive lock
+    schedule: "0 4 * * 0"
+    on-busy: wait
+    wait-timeout: 6h
+    steps:
+      - prune: { repo: system-local }
+      - prune: { repo: system-i1 }
+      - prune: { repo: system-i2 }
