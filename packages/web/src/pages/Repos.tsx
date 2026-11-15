@@ -1,6 +1,11 @@
 import { useRepos } from "../queries.js";
 import type { RepoView } from "../types.js";
-import { Badge, Card, ErrorBox, Loading, RunLink, Time } from "../components/ui.js";
+import { Badge } from "../components/Badge.js";
+import { Card } from "../components/Card.js";
+import { ErrorBox } from "../components/ErrorBox.js";
+import { Loading } from "../components/Loading.js";
+import { RunLink } from "../components/RunLink.js";
+import { Time } from "../components/Time.js";
 
 export function ReposPage() {
   const { data, error } = useRepos();

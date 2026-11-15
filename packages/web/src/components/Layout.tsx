@@ -1,25 +1,10 @@
 import type { ReactNode } from "react";
-import { Link, useRoute } from "wouter";
 import { formatTime } from "../format.js";
 import { useStatus } from "../queries.js";
 import { clearToken } from "../token.js";
+import { NavLink } from "./NavLink.js";
 
 export type Connection = "connecting" | "live" | "down";
-
-function NavLink({ href, children }: { href: string; children: ReactNode }) {
-  const [exact] = useRoute(href);
-  const [nested] = useRoute(`${href}/*`);
-  const active = exact || (href !== "/" && nested);
-  return (
-    <Link
-      href={href}
-      aria-current={active ? "page" : undefined}
-      className={`rounded px-2 py-1 text-sm ${active ? "bg-zinc-200 font-medium dark:bg-zinc-800" : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"}`}
-    >
-      {children}
-    </Link>
-  );
-}
 
 const connectionText: Record<Connection, [string, string]> = {
   connecting: ["bg-zinc-400", "connecting"],

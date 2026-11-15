@@ -3,7 +3,12 @@ import { Link } from "wouter";
 import { formatBytes, formatDuration } from "../format.js";
 import { isActive, useCancelRun, useLog, useRun } from "../queries.js";
 import type { LogRecord, StepRecord } from "../types.js";
-import { Badge, Button, Card, ErrorBox, Loading, Time } from "../components/ui.js";
+import { Badge } from "../components/Badge.js";
+import { Button } from "../components/Button.js";
+import { Card } from "../components/Card.js";
+import { ErrorBox } from "../components/ErrorBox.js";
+import { Loading } from "../components/Loading.js";
+import { Time } from "../components/Time.js";
 
 export function RunPage({ id }: { id: number }) {
   const { data: run, error } = useRun(id);

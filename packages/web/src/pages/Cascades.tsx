@@ -3,7 +3,13 @@ import { useLocation } from "wouter";
 import { formatDuration } from "../format.js";
 import { useCascades, useStartRun } from "../queries.js";
 import type { CascadeView } from "../types.js";
-import { Badge, Button, Card, ErrorBox, Loading, RunLink, Time } from "../components/ui.js";
+import { Badge } from "../components/Badge.js";
+import { Button } from "../components/Button.js";
+import { Card } from "../components/Card.js";
+import { ErrorBox } from "../components/ErrorBox.js";
+import { Loading } from "../components/Loading.js";
+import { RunLink } from "../components/RunLink.js";
+import { Time } from "../components/Time.js";
 
 export function CascadesPage() {
   const { data, error } = useCascades();

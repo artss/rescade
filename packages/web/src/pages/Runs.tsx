@@ -1,7 +1,13 @@
 import { useLocation, useSearch } from "wouter";
 import { formatDuration } from "../format.js";
 import { useCascades, useRuns } from "../queries.js";
-import { Badge, Button, ErrorBox, Loading, RunLink, td, th, Time } from "../components/ui.js";
+import { Badge } from "../components/Badge.js";
+import { Button } from "../components/Button.js";
+import { ErrorBox } from "../components/ErrorBox.js";
+import { Loading } from "../components/Loading.js";
+import { RunLink } from "../components/RunLink.js";
+import { Time } from "../components/Time.js";
+import { td, th } from "../components/table.js";
 
 export function RunsPage() {
   const cascade = new URLSearchParams(useSearch()).get("cascade") ?? undefined;
