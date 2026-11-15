@@ -125,13 +125,42 @@ TLS: `RESTIC_CACERT` (свой CA или самоподписанный серт
 у адреса и пароля (`RESTIC_FROM_*`), а ключи бэкенда и опции `-o` общие для обоих репо. rescade кладёт в
 окружение `env` источника, поверх него `env` цели, поэтому при совпадении имён побеждает цель.
 
-Что это значит для конфига:
+Остальные шаги (`backup`, `retain`, `prune`, `check`) запускают restic на одно репо, поэтому сколько угодно репо
+одного бэкенда с разными ключами в конфиге не мешают друг другу. Ограничение касается только пар `copy`/`from`:
 
 - репо на разных бэкендах (local → s3, sftp → b2) не мешают друг другу;
 - два репо на одном бэкенде с одними ключами (один бакет, разные пути) работают;
-- два репо на одном бэкенде с разными ключами напрямую не скопировать. Обходы: для rest логин в URL, для sftp
-  `Host` в `~/.ssh/config` с разными `IdentityFile`, для остального rclone с отдельным remote на каждый
-  аккаунт (`RCLONE_CONFIG_<A>_*` и `RCLONE_CONFIG_<B>_*` не пересекаются).
+- два репо на одном бэкенде с разными ключами напрямую не скопировать.
+
+Обходы для последнего случая, по порядку предпочтения:
+
+1. Копировать в оба из репо на другом бэкенде: не цепочка `s3-a → s3-b`, а звезда `local → s3-a`, `local → s3-b`,
+   и у обоих `from: system-local`. Чтение из локального репо ещё и быстрее, чем из облака.
+2. Для rest логин в URL, для sftp `Host` в `~/.ssh/config` с разными `IdentityFile`: эти настройки свои у каждого репо.
+3. rclone с отдельным remote на каждый аккаунт: `RCLONE_CONFIG_<A>_*` и `RCLONE_CONFIG_<B>_*` не пересекаются.
+   Достаточно перевести на rclone одну сторону пары. Формат репо не зависит от бэкенда, так что репо, созданное
+   через `s3:`, открывается через `rclone:` с тем же бакетом и путём.
+
+```yaml
+repos:
+  system-s3-a:
+    path: s3:s3.eu-central-1.amazonaws.com/bucket-a/system
+    password: ${SYSTEM_S3_A_PASSWORD}
+    env:
+      AWS_ACCESS_KEY_ID: ${S3_A_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${S3_A_SECRET}
+  system-s3-b:
+    # другой аккаунт: через rclone, чтобы его ключи не пересекались с AWS_* источника
+    path: rclone:s3b:bucket-b/system
+    password: ${SYSTEM_S3_B_PASSWORD}
+    from: system-s3-a
+    env:
+      RCLONE_CONFIG_S3B_TYPE: s3
+      RCLONE_CONFIG_S3B_PROVIDER: AWS
+      RCLONE_CONFIG_S3B_REGION: eu-central-1
+      RCLONE_CONFIG_S3B_ACCESS_KEY_ID: ${S3_B_KEY_ID}
+      RCLONE_CONFIG_S3B_SECRET_ACCESS_KEY: ${S3_B_SECRET}
+```
 
 ## Что проверяет `validate`
 

@@ -448,7 +448,7 @@ cascades:
     const r = await load();
     expect(r.ok).toBe(false);
     const hint =
-      "restic runs once for both repos; put REST credentials into the URL, SFTP keys into ~/.ssh/config, or use the rclone backend with a remote per account";
+      "restic runs once for both repos; copy into both from a repo on another backend, put REST credentials into the URL and SFTP keys into ~/.ssh/config, or use the rclone backend with a remote per account (see docs/backends.md)";
     expect(lines(r)).toEqual([
       `00.yaml:10:11: error: init --from-repo: env AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY differ between "a" and "b", but restic would use the values of "b" for both; ${hint}`,
       `00.yaml:17:9: error: env AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY differ between "a" and "b", but restic would use the values of "b" for both; ${hint}`,

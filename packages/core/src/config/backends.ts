@@ -113,8 +113,9 @@ export function sharedSettingsIssues(
   const sameBackend = backendOf(from.path) === backendOf(to.path);
   const out: Array<{ message: string; severity: Severity }> = [];
   const hint =
-    "restic runs once for both repos; put REST credentials into the URL, SFTP keys into ~/.ssh/config, " +
-    "or use the rclone backend with a remote per account";
+    "restic runs once for both repos; copy into both from a repo on another backend, put REST credentials " +
+    "into the URL and SFTP keys into ~/.ssh/config, or use the rclone backend with a remote per account " +
+    "(see docs/backends.md)";
 
   const compare = (kind: "env" | "option", a: Record<string, string>, b: Record<string, string>) => {
     const differ: string[] = [];
