@@ -31,7 +31,7 @@ export interface ResticContext {
 export const DEFAULT_REPO_CHECK_TIMEOUT_MS = 2 * 60 * 1000;
 
 /** Variables that pick a repository or its password; rescade sets these itself. */
-const OWN_VARS = new Set(
+export const OWN_VARS = new Set(
   ["REPOSITORY", "REPOSITORY_FILE", "PASSWORD", "PASSWORD_FILE", "PASSWORD_COMMAND"].flatMap((v) => [
     `RESTIC_${v}`,
     `RESTIC_FROM_${v}`,

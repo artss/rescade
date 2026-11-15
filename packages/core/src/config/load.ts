@@ -1,6 +1,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { LineCounter, parseDocument, visit, isMap, isScalar, type Document } from "yaml";
+import { checkRepo } from "./backends.js";
 import { displayPath, type Diagnostic, type Severity } from "./diagnostics.js";
 import { expandString } from "./expand.js";
 import { fromZod, isPlainObject, type Issue, type Path } from "./issues.js";
@@ -194,7 +195,12 @@ export async function loadConfig(options: LoadOptions): Promise<LoadResult> {
       declaredRepos.add(name);
       const r = RepoSchema.safeParse(raw);
       if (!r.success) fromZod(r.error, [], raw).forEach((i) => reportIssue(entry, i));
-      else repos.set(name, normalizeRepo(r.data));
+      else {
+        const repo = normalizeRepo(r.data);
+        const issues = checkRepo(repo);
+        issues.forEach(({ severity, ...i }) => reportIssue(entry, i, severity));
+        if (!issues.some((i) => i.severity === "error")) repos.set(name, repo);
+      }
     } else if (section === "sets") {
       declaredSets.add(name);
       const r = SetSchema.safeParse(raw);
