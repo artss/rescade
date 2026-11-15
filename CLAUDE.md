@@ -26,10 +26,11 @@ API под `/api`, остальные пути отдают собранный �
 `sse.ts` поток событий через fetch, `queries.ts` хуки и `applyEvent`, `log.ts` склейка лога по `id`, `pages/*`), демон
 находит его сборку через `import.meta.resolve("@rescade/web/package.json")`.
 Бэкенды restic (`src/config/backends.ts`: префикс `path`, опции по бэкенду, конфликты `env`/`options` в парах
-`copy`/`from`; описание в `docs/backends.md`). 191 тест vitest (проекты `node` и `web`), фейковый restic в `packages/core/test/fake-restic.mjs`, 7 интеграционных с настоящим restic
+`copy`/`from`; описание в `docs/backends.md`). 194 теста vitest (проекты `node` и `web`), фейковый restic в `packages/core/test/fake-restic.mjs`, 7 интеграционных с настоящим restic
 (проверено на 0.19.1), пример в `examples/config`.
 
-Шаги 1–7 из DESIGN.md сделаны. Отложено: экран логов демона, уведомления, веб-редактор конфига.
+Шаги 1–7 из DESIGN.md сделаны. Шаг 8: `Dockerfile`, `.github/workflows/ci.yaml` (тесты, затем образ
+в `ghcr.io/artss/rescade` для amd64/arm64), пример `examples/docker`. Отложено: экран логов демона, уведомления, веб-редактор конфига.
 
 ## Команды
 
@@ -100,5 +101,15 @@ API под `/api`, остальные пути отдают собранный �
 - Ответ 401 сбрасывает токен, только если он тот же, с которым ушёл запрос: иначе поздние 401 от неверного токена
   стирали только что введённый верный.
 - happy-dom в тестах печатает `socket hang up` при отмене fetch (SSE при уходе со страницы), это не ошибка.
+- В alpine `env` из BusyBox без `-S`, шебанг демона там не работает: в образе `rescaded`/`rescade` — обёртки на `sh`.
+- `pnpm deploy` копирует пакет целиком, если нет `files`; у всех пакетов `"files": ["dist"]`. Зависимости `web`
+  (React и т. п.) в `devDependencies`: в рантайме нужен только собранный `dist`.
+- Стадии сборки в `Dockerfile` идут на `$BUILDPLATFORM`: результат — JS без нативных модулей, restic качается под
+  `TARGETARCH`; эмуляция arm64 нужна только для `apk add` последней стадии. При смене версии restic обновить обе суммы.
+- На Docker Desktop для macOS restic не читает файлы с bind mount (ФС `fakeowner`): после `open` он включает
+  `O_NOATIME` через `fcntl(F_SETFL)`, и `read` даёт `EIO` (`cat` и `open(..., O_NOATIME)` при этом работают).
+  Проверять образ там на именованных томах; на Linux-хосте bind mount обычный.
+- `RESTIC_HOST` в окружении restic — не только имя для `backup`, но и фильтр по умолчанию в `forget`, `copy`, `check`,
+  `snapshots` (restic 0.19.1). Имя хоста в контейнере фиксируется `hostname:` в compose, а не этой переменной.
 - В режиме `--allow-missing-env` значения подменяются на `<NAME is unset>`: годится для валидации, не для запуска
   (список в `LoadResult.missingEnv`).
