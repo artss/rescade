@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { BackupSet, Chain, Repo, Retention } from "./types.js";
+import type { BackupSet, Cascade, Repo, Retention } from "./types.js";
 
 /* ---------- durations ---------- */
 
@@ -100,9 +100,9 @@ export function normalizeSet(v: z.output<typeof SetSchema>): BackupSet {
   };
 }
 
-/* ---------- chains (steps are validated separately, see steps.ts) ---------- */
+/* ---------- cascades (steps are validated separately, see steps.ts) ---------- */
 
-export const ChainSchema = z.strictObject({
+export const CascadeSchema = z.strictObject({
   description: z.string().optional(),
   schedule: z
     .union([z.string().min(1), stringList.min(1)], {
@@ -112,12 +112,12 @@ export const ChainSchema = z.strictObject({
   timezone: z.string().min(1).optional(),
   "on-busy": z.enum(["wait", "skip"]).optional(),
   "wait-timeout": duration.optional(),
-  steps: z.array(z.unknown()).min(1, "a chain needs at least one step"),
+  steps: z.array(z.unknown()).min(1, "a cascade needs at least one step"),
 });
 
-export type ChainHeader = Omit<Chain, "steps">;
+export type CascadeHeader = Omit<Cascade, "steps">;
 
-export function normalizeChainHeader(v: z.output<typeof ChainSchema>): ChainHeader {
+export function normalizeCascadeHeader(v: z.output<typeof CascadeSchema>): CascadeHeader {
   const schedule = v.schedule === undefined ? [] : Array.isArray(v.schedule) ? v.schedule : [v.schedule];
   return {
     description: v.description,

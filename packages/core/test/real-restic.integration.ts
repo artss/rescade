@@ -3,7 +3,7 @@ import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { runChain, type Chain, type Config, type RunEvent, type Step } from "../src/index.js";
+import { runCascade, type Cascade, type Config, type RunEvent, type Step } from "../src/index.js";
 import { repo } from "./helpers/fake.js";
 
 const RESTIC = process.env.RESCADE_RESTIC ?? "restic";
@@ -28,7 +28,7 @@ afterAll(async () => {
 });
 
 function config(steps: Step[], overrides: Partial<Config["repos"]> = {}): Config {
-  const chain: Chain = { schedule: [], onBusy: "skip", steps };
+  const cascade: Cascade = { schedule: [], onBusy: "skip", steps };
   return {
     repos: {
       a: repo(path.join(dir, "a"), { retention: { last: 1 } }),
@@ -37,13 +37,13 @@ function config(steps: Step[], overrides: Partial<Config["repos"]> = {}): Config
       ...overrides,
     } as Config["repos"],
     sets: { s: { include: [src], exclude: ["*.bak"], tags: ["it"], oneFileSystem: false, excludeCaches: true } },
-    chains: { c: chain },
+    cascades: { c: cascade },
   };
 }
 
 async function run(steps: Step[], overrides: Partial<Config["repos"]> = {}) {
   const logs: string[] = [];
-  const result = await runChain(config(steps, overrides), "c", {
+  const result = await runCascade(config(steps, overrides), "c", {
     restic: RESTIC,
     env,
     onEvent: (e: RunEvent) => {
@@ -120,7 +120,7 @@ describe("with real restic", () => {
   it("gives up on a REST server that does not answer instead of waiting for restic's retries", async () => {
     const cfg = config([{ type: "check", repo: "a" }], { a: repo("rest:http://127.0.0.1:1/") });
     const started = Date.now();
-    const result = await runChain(cfg, "c", { restic: RESTIC, env, repoCheckTimeoutMs: 3000 });
+    const result = await runCascade(cfg, "c", { restic: RESTIC, env, repoCheckTimeoutMs: 3000 });
     expect(result.steps[0]?.status).toBe("failed");
     expect(result.steps[0]?.reason).toMatch(/^repo "a" did not respond within 3s: .*connection refused/);
     expect(Date.now() - started).toBeLessThan(20_000);
@@ -141,7 +141,7 @@ describe("with real restic", () => {
   it("reports a failing backup with restic's own message, not JSON", async () => {
     const cfg = config([{ type: "backup", set: "gone", repo: "a", tags: [] }]);
     cfg.sets.gone = { include: [path.join(dir, "does-not-exist")], exclude: [], tags: [], oneFileSystem: false, excludeCaches: false };
-    const result = await runChain(cfg, "c", { restic: RESTIC, env });
+    const result = await runCascade(cfg, "c", { restic: RESTIC, env });
     expect(result.steps[0]?.status).toBe("failed");
     expect(result.steps[0]?.reason).toMatch(/^restic backup failed \(exit code 1\): Fatal: /);
     expect(result.steps[0]?.reason).not.toContain("{");

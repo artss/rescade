@@ -1,13 +1,13 @@
 import { Cron } from "croner";
 import type { Path } from "./issues.js";
-import type { Chain, Repo, Step } from "./types.js";
+import type { Cascade, Repo, Step } from "./types.js";
 import type { Severity } from "./diagnostics.js";
 
-export type Section = "repos" | "sets" | "chains";
+export type Section = "repos" | "sets" | "cascades";
 
-/** A chain whose header is valid; each step is either valid or undefined (already reported). */
-export interface ChainDraft {
-  header: Omit<Chain, "steps">;
+/** A cascade whose header is valid; each step is either valid or undefined (already reported). */
+export interface CascadeDraft {
+  header: Omit<Cascade, "steps">;
   steps: Array<Step | undefined>;
 }
 
@@ -17,7 +17,7 @@ export interface SemanticInput {
   declaredSets: Set<string>;
   /** Only entries that passed validation. */
   repos: Map<string, Repo>;
-  chains: Map<string, ChainDraft>;
+  cascades: Map<string, CascadeDraft>;
 }
 
 export type Report = (
@@ -32,7 +32,7 @@ export type Report = (
 /** Checks that need the whole config at once: references, cycles, schedules. */
 export function checkSemantics(input: SemanticInput, report: Report): void {
   checkFromChains(input, report);
-  for (const [name, draft] of input.chains) checkChain(name, draft, input, report);
+  for (const [name, draft] of input.cascades) checkCascade(name, draft, input, report);
 }
 
 /** Follows `from` links to the root repo. Returns undefined when the chain is broken or cyclic. */
@@ -83,7 +83,7 @@ function checkFromChains({ declaredRepos, repos }: SemanticInput, report: Report
   }
 }
 
-function checkChain(name: string, draft: ChainDraft, input: SemanticInput, report: Report): void {
+function checkCascade(name: string, draft: CascadeDraft, input: SemanticInput, report: Report): void {
   const { declaredRepos, declaredSets, repos } = input;
   const { header } = draft;
 
@@ -91,7 +91,7 @@ function checkChain(name: string, draft: ChainDraft, input: SemanticInput, repor
     try {
       new Intl.DateTimeFormat("en-US", { timeZone: header.timezone });
     } catch {
-      report("chains", name, ["timezone"], `unknown time zone "${header.timezone}"`);
+      report("cascades", name, ["timezone"], `unknown time zone "${header.timezone}"`);
     }
   }
   header.schedule.forEach((expr, i) => {
@@ -100,11 +100,11 @@ function checkChain(name: string, draft: ChainDraft, input: SemanticInput, repor
     } catch (e) {
       const why = e instanceof Error ? e.message : String(e);
       // if `schedule` was written as a single string, the position falls back to that string
-      report("chains", name, ["schedule", i], `invalid cron expression "${expr}": ${why}`);
+      report("cascades", name, ["schedule", i], `invalid cron expression "${expr}": ${why}`);
     }
   });
   if (header.waitTimeoutMs !== undefined && header.onBusy !== "wait") {
-    report("chains", name, ["wait-timeout"], 'wait-timeout only applies with on-busy: wait', "error", "key");
+    report("cascades", name, ["wait-timeout"], 'wait-timeout only applies with on-busy: wait', "error", "key");
   }
 
   draft.steps.forEach((step, i) => {
@@ -113,13 +113,13 @@ function checkChain(name: string, draft: ChainDraft, input: SemanticInput, repor
 
     const needRepo = (repo: string, field: string): boolean => {
       if (declaredRepos.has(repo)) return true;
-      report("chains", name, at(field), `unknown repo "${repo}"`);
+      report("cascades", name, at(field), `unknown repo "${repo}"`);
       return false;
     };
 
     switch (step.type) {
       case "backup":
-        if (!declaredSets.has(step.set)) report("chains", name, at("set"), `unknown set "${step.set}"`);
+        if (!declaredSets.has(step.set)) report("cascades", name, at("set"), `unknown set "${step.set}"`);
         needRepo(step.repo, "repo");
         break;
       case "retain": {
@@ -127,7 +127,7 @@ function checkChain(name: string, draft: ChainDraft, input: SemanticInput, repor
           const repo = repos.get(step.repo);
           if (repo && repo.retention === undefined) {
             report(
-              "chains",
+              "cascades",
               name,
               at("repo"),
               `repo "${step.repo}" has no retention policy; add "retention:" to it before using retain`,
@@ -145,13 +145,13 @@ function checkChain(name: string, draft: ChainDraft, input: SemanticInput, repor
         const toOk = needRepo(step.to, "to");
         if (fromOk && toOk) {
           if (step.from === step.to) {
-            report("chains", name, at("to"), "copy needs two different repos");
+            report("cascades", name, at("to"), "copy needs two different repos");
           } else {
             const a = rootOf(step.from, repos);
             const b = rootOf(step.to, repos);
             if (a !== undefined && b !== undefined && a !== b) {
               report(
-                "chains",
+                "cascades",
                 name,
                 at(),
                 `"${step.from}" and "${step.to}" are not linked by "from"; if "${step.to}" was not created with ` +
@@ -166,7 +166,7 @@ function checkChain(name: string, draft: ChainDraft, input: SemanticInput, repor
       }
       case "run":
         step.lock.forEach((repo, k) => {
-          if (!declaredRepos.has(repo)) report("chains", name, at("lock", k), `unknown repo "${repo}"`);
+          if (!declaredRepos.has(repo)) report("cascades", name, at("lock", k), `unknown repo "${repo}"`);
         });
         break;
     }

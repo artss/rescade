@@ -45,8 +45,8 @@ sets:
   s:
     include: [/etc]
 `;
-const CHAIN = `
-chains:
+const CASCADE = `
+cascades:
   c:
     schedule: "0 */4 * * *"
     steps:
@@ -57,17 +57,17 @@ chains:
 
 describe("loading", () => {
   it("loads and normalizes a valid config split over several files", async () => {
-    await write({ "00-repos.yaml": REPOS, "01-sets.yml": SETS, "02-chains.yaml": CHAIN });
+    await write({ "00-repos.yaml": REPOS, "01-sets.yml": SETS, "02-cascades.yaml": CASCADE });
     const r = await load();
     expect(lines(r)).toEqual([]);
     expect(r.ok).toBe(true);
-    expect(r.files.map((f) => path.basename(f))).toEqual(["00-repos.yaml", "01-sets.yml", "02-chains.yaml"]);
+    expect(r.files.map((f) => path.basename(f))).toEqual(["00-repos.yaml", "01-sets.yml", "02-cascades.yaml"]);
     const c = r.config!;
     expect(c.repos.a!.password).toBe("secret");
     expect(c.repos.b!.from).toBe("a");
     expect(c.sets.s).toMatchObject({ include: ["/etc"], exclude: [], oneFileSystem: false });
-    expect(c.chains.c).toMatchObject({ schedule: ["0 */4 * * *"], onBusy: "skip" });
-    expect(c.chains.c!.steps.map((s) => s.type)).toEqual(["backup", "retain", "copy"]);
+    expect(c.cascades.c).toMatchObject({ schedule: ["0 */4 * * *"], onBusy: "skip" });
+    expect(c.cascades.c!.steps.map((s) => s.type)).toEqual(["backup", "retain", "copy"]);
     expect(r.referencedEnv).toEqual(["PW"]);
     expect(r.origins["repos/a"]).toMatchObject({ line: 3, col: 3 });
   });
@@ -84,7 +84,7 @@ describe("loading", () => {
   });
 
   it("accepts a single file as the path", async () => {
-    await write({ "only.yaml": REPOS + SETS + CHAIN });
+    await write({ "only.yaml": REPOS + SETS + CASCADE });
     const r = await loadConfig({ path: path.join(dir, "only.yaml"), env: { PW: "x" } });
     expect(lines(r)).toEqual([]);
     expect(r.ok).toBe(true);
@@ -92,7 +92,7 @@ describe("loading", () => {
 
   it("ignores non-yaml, hidden and backup files", async () => {
     await write({
-      "00.yaml": REPOS + SETS + CHAIN,
+      "00.yaml": REPOS + SETS + CASCADE,
       "notes.txt": "not yaml: [",
       ".hidden.yaml": "garbage: [",
       "old.yaml~": "garbage: [",
@@ -103,7 +103,7 @@ describe("loading", () => {
   });
 
   it("tolerates empty and comment-only files", async () => {
-    await write({ "00.yaml": "", "01.yaml": "# nothing here\n", "02.yaml": REPOS + SETS + CHAIN });
+    await write({ "00.yaml": "", "01.yaml": "# nothing here\n", "02.yaml": REPOS + SETS + CASCADE });
     expect((await load()).ok).toBe(true);
   });
 
@@ -147,7 +147,7 @@ describe("yaml problems", () => {
   });
 
   it("rejects duplicate keys inside one file", async () => {
-    await write({ "bad.yaml": "chains:\n  c: { steps: [] }\n  c: { steps: [] }\n" });
+    await write({ "bad.yaml": "cascades:\n  c: { steps: [] }\n  c: { steps: [] }\n" });
     const r = await load();
     expect(r.ok).toBe(false);
     expect(lines(r).join("\n")).toMatch(/bad\.yaml:3:3: error: /);
@@ -157,8 +157,8 @@ describe("yaml problems", () => {
     await write({ "a.yaml": "reops: {}\n", "b.yaml": "- just\n- a list\n" });
     const r = await load();
     expect(lines(r)).toEqual([
-      'a.yaml:1:1: error: unknown top-level key "reops" (expected: repos, sets, chains)',
-      "b.yaml:1:1: error: top level must be a mapping with the sections: repos, sets, chains",
+      'a.yaml:1:1: error: unknown top-level key "reops" (expected: repos, sets, cascades)',
+      "b.yaml:1:1: error: top level must be a mapping with the sections: repos, sets, cascades",
     ]);
   });
 });
@@ -178,7 +178,7 @@ describe("merging", () => {
   it("allows the same name in different sections", async () => {
     await write({
       "00.yaml":
-        "repos:\n  x: { path: /a, password: p }\nsets:\n  x: { include: [/e] }\nchains:\n  x:\n    steps:\n      - backup: { set: x, repo: x }\n",
+        "repos:\n  x: { path: /a, password: p }\nsets:\n  x: { include: [/e] }\ncascades:\n  x:\n    steps:\n      - backup: { set: x, repo: x }\n",
     });
     expect((await load()).ok).toBe(true);
   });
@@ -288,7 +288,7 @@ describe("cross-references", () => {
     await write({
       "00.yaml":
         base +
-        "chains:\n  c:\n    steps:\n      - backup: { set: nope, repo: a }\n      - retain: { repo: zzz }\n",
+        "cascades:\n  c:\n    steps:\n      - backup: { set: nope, repo: a }\n      - retain: { repo: zzz }\n",
     });
     const r = await load();
     expect(lines(r).map((l) => l.replace(/^00\.yaml:/, ""))).toEqual([
@@ -297,15 +297,15 @@ describe("cross-references", () => {
     ]);
   });
 
-  it("allows a chain to refer to repos defined in another file", async () => {
-    await write({ "00.yaml": REPOS, "01.yaml": SETS, "02.yaml": CHAIN });
+  it("allows a cascade to refer to repos defined in another file", async () => {
+    await write({ "00.yaml": REPOS, "01.yaml": SETS, "02.yaml": CASCADE });
     expect((await load()).ok).toBe(true);
   });
 
   it("requires retention on repos used by retain", async () => {
     await write({
       "00.yaml":
-        "repos:\n  a: { path: /a, password: x }\nchains:\n  c:\n    steps:\n      - retain: { repo: a }\n",
+        "repos:\n  a: { path: /a, password: x }\ncascades:\n  c:\n    steps:\n      - retain: { repo: a }\n",
     });
     const r = await load();
     expect(lines(r)[0]).toMatch(/^00\.yaml:6:.*error: repo "a" has no retention policy/);
@@ -333,7 +333,7 @@ describe("cross-references", () => {
   });
 
   it("rejects copying a repo onto itself", async () => {
-    await write({ "00.yaml": base + "chains:\n  c:\n    steps:\n      - copy: { from: a, to: a }\n" });
+    await write({ "00.yaml": base + "cascades:\n  c:\n    steps:\n      - copy: { from: a, to: a }\n" });
     const r = await load();
     expect(lines(r)[0]).toMatch(/error: copy needs two different repos/);
   });
@@ -341,7 +341,7 @@ describe("cross-references", () => {
   it("warns, but does not fail, when copy links repos that are not related by from", async () => {
     await write({
       "00.yaml":
-        "repos:\n  a: { path: /a, password: x }\n  b: { path: /b, password: x }\nchains:\n  c:\n    steps:\n      - copy: { from: a, to: b }\n",
+        "repos:\n  a: { path: /a, password: x }\n  b: { path: /b, password: x }\ncascades:\n  c:\n    steps:\n      - copy: { from: a, to: b }\n",
     });
     const r = await load();
     expect(r.ok).toBe(true);
@@ -353,7 +353,7 @@ describe("cross-references", () => {
   it("does not warn when repos share a root through from", async () => {
     await write({
       "00.yaml":
-        "repos:\n  a: { path: /a, password: x }\n  b: { path: /b, password: x, from: a }\n  c: { path: /c, password: x, from: b }\nchains:\n  k:\n    steps:\n      - copy: { from: a, to: c }\n      - copy: { from: c, to: b }\n",
+        "repos:\n  a: { path: /a, password: x }\n  b: { path: /b, password: x, from: a }\n  c: { path: /c, password: x, from: b }\ncascades:\n  k:\n    steps:\n      - copy: { from: a, to: c }\n      - copy: { from: c, to: b }\n",
     });
     const r = await load();
     expect(lines(r)).toEqual([]);
@@ -361,7 +361,7 @@ describe("cross-references", () => {
 
   it("checks lock lists on run steps", async () => {
     await write({
-      "00.yaml": "repos:\n  a: { path: /a, password: x }\nchains:\n  c:\n    steps:\n      - run: { command: [/bin/true], lock: [a, ghost] }\n",
+      "00.yaml": "repos:\n  a: { path: /a, password: x }\ncascades:\n  c:\n    steps:\n      - run: { command: [/bin/true], lock: [a, ghost] }\n",
     });
     const r = await load();
     expect(lines(r)).toHaveLength(1);
@@ -369,14 +369,14 @@ describe("cross-references", () => {
   });
 });
 
-describe("chains", () => {
+describe("cascades", () => {
   const head = REPOS + SETS;
 
   it("rejects bad cron expressions and time zones", async () => {
     await write({
       "00.yaml":
         head +
-        "chains:\n  c:\n    schedule: ['0 */4 * * *', 'every day']\n    timezone: Mars/Base\n    steps:\n      - retain: { repo: a }\n",
+        "cascades:\n  c:\n    schedule: ['0 */4 * * *', 'every day']\n    timezone: Mars/Base\n    steps:\n      - retain: { repo: a }\n",
     });
     const r = await load();
     expect(lines(r)).toHaveLength(2);
@@ -388,20 +388,20 @@ describe("chains", () => {
     await write({
       "00.yaml":
         head +
-        "chains:\n  one:\n    schedule: '0 3 * * *'\n    steps:\n      - retain: { repo: a }\n  two:\n    schedule: ['0 3 * * *', '30 15 * * 1']\n    steps:\n      - retain: { repo: a }\n  none:\n    steps:\n      - retain: { repo: a }\n",
+        "cascades:\n  one:\n    schedule: '0 3 * * *'\n    steps:\n      - retain: { repo: a }\n  two:\n    schedule: ['0 3 * * *', '30 15 * * 1']\n    steps:\n      - retain: { repo: a }\n  none:\n    steps:\n      - retain: { repo: a }\n",
     });
     const r = await load();
     expect(r.ok).toBe(true);
-    expect(r.config!.chains.one!.schedule).toHaveLength(1);
-    expect(r.config!.chains.two!.schedule).toHaveLength(2);
-    expect(r.config!.chains.none!.schedule).toEqual([]);
+    expect(r.config!.cascades.one!.schedule).toHaveLength(1);
+    expect(r.config!.cascades.two!.schedule).toHaveLength(2);
+    expect(r.config!.cascades.none!.schedule).toEqual([]);
   });
 
   it("handles on-busy and wait-timeout", async () => {
     await write({
       "00.yaml":
         head +
-        "chains:\n  w:\n    on-busy: wait\n    wait-timeout: 2h\n    steps:\n      - retain: { repo: a }\n  bad:\n    on-busy: skip\n    wait-timeout: 2h\n    steps:\n      - retain: { repo: a }\n",
+        "cascades:\n  w:\n    on-busy: wait\n    wait-timeout: 2h\n    steps:\n      - retain: { repo: a }\n  bad:\n    on-busy: skip\n    wait-timeout: 2h\n    steps:\n      - retain: { repo: a }\n",
     });
     const r = await load();
     expect(lines(r)).toHaveLength(1);
@@ -409,15 +409,15 @@ describe("chains", () => {
   });
 
   it("rejects an invalid on-busy value and an empty steps list", async () => {
-    await write({ "00.yaml": head + "chains:\n  c:\n    on-busy: later\n    steps: []\n" });
+    await write({ "00.yaml": head + "cascades:\n  c:\n    on-busy: later\n    steps: []\n" });
     const r = await load();
     expect(r.diagnostics.filter((d) => d.severity === "error").length).toBeGreaterThanOrEqual(2);
-    expect(lines(r).join("\n")).toMatch(/a chain needs at least one step/);
+    expect(lines(r).join("\n")).toMatch(/a cascade needs at least one step/);
   });
 
-  it("still validates steps when the chain header is broken", async () => {
+  it("still validates steps when the cascade header is broken", async () => {
     await write({
-      "00.yaml": head + "chains:\n  c:\n    on-busy: later\n    steps:\n      - nonsense: {}\n",
+      "00.yaml": head + "cascades:\n  c:\n    on-busy: later\n    steps:\n      - nonsense: {}\n",
     });
     const r = await load();
     expect(lines(r).join("\n")).toMatch(/unknown step action "nonsense"/);
@@ -426,11 +426,11 @@ describe("chains", () => {
 
 describe("steps", () => {
   const head = REPOS + SETS;
-  const chain = (steps: string) => head + "chains:\n  c:\n    steps:\n" + steps;
+  const cascade = (steps: string) => head + "cascades:\n  c:\n    steps:\n" + steps;
 
   it("requires exactly one action", async () => {
     await write({
-      "00.yaml": chain(
+      "00.yaml": cascade(
         "      - {}\n      - { backup: { set: s, repo: a }, retain: { repo: a } }\n      - just a string\n      - { name: lonely }\n",
       ),
     });
@@ -443,7 +443,7 @@ describe("steps", () => {
 
   it("reports typos in action names and fields", async () => {
     await write({
-      "00.yaml": chain("      - backups: { set: s, repo: a }\n      - backup: { set: s, repo: a, rpeo: a }\n"),
+      "00.yaml": cascade("      - backups: { set: s, repo: a }\n      - backup: { set: s, repo: a, rpeo: a }\n"),
     });
     const r = await load();
     const text = lines(r).join("\n");
@@ -452,7 +452,7 @@ describe("steps", () => {
   });
 
   it("requires the fields each action needs", async () => {
-    await write({ "00.yaml": chain("      - backup: { repo: a }\n      - copy: { from: a }\n      - retain: {}\n") });
+    await write({ "00.yaml": cascade("      - backup: { repo: a }\n      - copy: { from: a }\n      - retain: {}\n") });
     const r = await load();
     const text = lines(r).join("\n");
     expect(text).toMatch(/missing required field "set"/);
@@ -462,7 +462,7 @@ describe("steps", () => {
 
   it("parses every action with its options", async () => {
     await write({
-      "00.yaml": chain(
+      "00.yaml": cascade(
         [
           "      - backup: { set: s, repo: a, tags: [nightly] }",
           "      - { name: tidy, retain: { repo: a } }",
@@ -475,7 +475,7 @@ describe("steps", () => {
     });
     const r = await load();
     expect(lines(r)).toEqual([]);
-    expect(r.config!.chains.c!.steps).toEqual([
+    expect(r.config!.cascades.c!.steps).toEqual([
       { type: "backup", name: undefined, set: "s", repo: "a", tags: ["nightly"] },
       { type: "retain", name: "tidy", repo: "a" },
       { type: "prune", name: undefined, repo: "a", maxUnused: "5%" },
@@ -486,7 +486,7 @@ describe("steps", () => {
 
   it("parses run steps: argv by default, shell on request, timeout default", async () => {
     await write({
-      "00.yaml": chain(
+      "00.yaml": cascade(
         [
           "      - run: { command: [/bin/dump, --all], timeout: 10m, env: { PGUSER: backup }, cwd: /tmp }",
           "      - run: { command: 'pg_dump | gzip > /x', shell: true }",
@@ -496,7 +496,7 @@ describe("steps", () => {
     });
     const r = await load();
     expect(lines(r)).toEqual([]);
-    const [argv, sh] = r.config!.chains.c!.steps;
+    const [argv, sh] = r.config!.cascades.c!.steps;
     expect(argv).toMatchObject({
       type: "run",
       shell: false,
@@ -511,7 +511,7 @@ describe("steps", () => {
 
   it("rejects mismatched command forms and bad timeouts", async () => {
     await write({
-      "00.yaml": chain(
+      "00.yaml": cascade(
         [
           "      - run: { command: 'echo hi' }",
           "      - run: { command: [echo, hi], shell: true }",
@@ -532,7 +532,7 @@ describe("steps", () => {
 
   it("explains YAML scalars that were not meant to be arguments", async () => {
     await write({
-      "00.yaml": chain("      - run: { command: [systemctl, stop, 123, true] }\n"),
+      "00.yaml": cascade("      - run: { command: [systemctl, stop, 123, true] }\n"),
     });
     const r = await load();
     expect(lines(r)).toHaveLength(1);
@@ -540,7 +540,7 @@ describe("steps", () => {
   });
 
   it("reports a missing command together with other problems in the same step", async () => {
-    await write({ "00.yaml": chain("      - run: { timeout: soon }\n") });
+    await write({ "00.yaml": cascade("      - run: { timeout: soon }\n") });
     const r = await load();
     const text = lines(r).join("\n");
     expect(text).toMatch(/missing required field "command"/);

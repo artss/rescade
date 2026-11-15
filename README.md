@@ -15,7 +15,7 @@ Exit codes of `validate`: 0 valid, 1 errors in the config, 2 bad usage.
 ## Config
 
 A directory of `*.yaml` / `*.yml` files (or a single file), set with `--config-dir` or
-`RESCADE_CONFIG_DIR`. Each file is parsed on its own and the entries of `repos`, `sets` and `chains`
+`RESCADE_CONFIG_DIR`. Each file is parsed on its own and the entries of `repos`, `sets` and `cascades`
 are merged by name. The same name in two files is an error, and so is an unknown key.
 
 - `${VAR}` and `${VAR:-default}` are expanded in values (not keys); `$$` is a literal `$`.

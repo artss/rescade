@@ -5,24 +5,24 @@ import {
   formatDuration,
   loadConfig,
   parseDuration,
-  runChain,
+  runCascade,
   type RunEvent,
   type RunStatus,
   type StepResult,
 } from "@rescade/core";
 
-const HELP = `rescade - chains of restic commands
+const HELP = `rescade - cascades of restic commands
 
 Usage:
   rescade validate [--config-dir <path>] [--allow-missing-env] [--json]
-  rescade run --local <chain> [--config-dir <path>] [--restic <path>]
+  rescade run --local <cascade> [--config-dir <path>] [--restic <path>]
 
 Options:
   --config-dir <path>   directory with *.yaml files, or a single file
                         (default: $RESCADE_CONFIG_DIR, then ./config)
   --allow-missing-env   validate: report unset \${VAR} as warnings instead of errors
   --json                validate: machine-readable output
-  --local               run: run the chain in this process, without the daemon
+  --local               run: run the cascade in this process, without the daemon
   --restic <path>       run: restic binary (default: $RESCADE_RESTIC, then restic)
 
 Environment:
@@ -83,7 +83,7 @@ async function validate(argv: string[]): Promise<number> {
     const s = summarize(result.config)!;
     const w = warnings > 0 ? `, ${warnings} warning${warnings === 1 ? "" : "s"}` : "";
     console.log(
-      `ok: ${s.repos} repos, ${s.sets} sets, ${s.chains} chains from ${result.files.length} file${result.files.length === 1 ? "" : "s"}${w}`,
+      `ok: ${s.repos} repos, ${s.sets} sets, ${s.cascades} cascades from ${result.files.length} file${result.files.length === 1 ? "" : "s"}${w}`,
     );
     return 0;
   }
@@ -115,14 +115,14 @@ async function run(argv: string[]): Promise<number> {
     return 0;
   }
   if (positionals.length !== 1) {
-    console.error("rescade: run needs exactly one chain name");
+    console.error("rescade: run needs exactly one cascade name");
     return 2;
   }
   if (!values.local) {
-    console.error("rescade: the daemon is not implemented yet; use run --local to run the chain in this process");
+    console.error("rescade: the daemon is not implemented yet; use run --local to run the cascade in this process");
     return 2;
   }
-  const chainName = positionals[0]!;
+  const cascadeName = positionals[0]!;
 
   let repoCheckTimeoutMs: number | undefined;
   const checkTimeout = process.env.RESCADE_REPO_CHECK_TIMEOUT;
@@ -143,10 +143,10 @@ async function run(argv: string[]): Promise<number> {
     console.error("failed: the config has errors");
     return 1;
   }
-  const chain = loaded.config.chains[chainName];
-  if (!chain) {
-    const known = Object.keys(loaded.config.chains).join(", ") || "none";
-    console.error(`rescade: unknown chain "${chainName}" (defined: ${known})`);
+  const cascade = loaded.config.cascades[cascadeName];
+  if (!cascade) {
+    const known = Object.keys(loaded.config.cascades).join(", ") || "none";
+    console.error(`rescade: unknown cascade "${cascadeName}" (defined: ${known})`);
     return 1;
   }
 
@@ -160,7 +160,7 @@ async function run(argv: string[]): Promise<number> {
   process.on("SIGINT", onSignal);
   process.on("SIGTERM", onSignal);
 
-  const total = chain.steps.length;
+  const total = cascade.steps.length;
   const tag = (index: number) => `[${index + 1}/${total}]`;
   const onEvent = (e: RunEvent) => {
     switch (e.kind) {
@@ -176,14 +176,14 @@ async function run(argv: string[]): Promise<number> {
     }
   };
 
-  const result = await runChain(loaded.config, chainName, {
+  const result = await runCascade(loaded.config, cascadeName, {
     restic: values.restic ?? process.env.RESCADE_RESTIC ?? "restic",
     env: process.env,
     signal: ac.signal,
     repoCheckTimeoutMs,
     onEvent,
   });
-  console.log(`chain "${chainName}": ${result.status} in ${formatDuration(result.finishedAt - result.startedAt)}`);
+  console.log(`cascade "${cascadeName}": ${result.status} in ${formatDuration(result.finishedAt - result.startedAt)}`);
   return RUN_EXIT[result.status];
 }
 
@@ -198,7 +198,7 @@ function summarize(config: Awaited<ReturnType<typeof loadConfig>>["config"]) {
   return {
     repos: Object.keys(config.repos).length,
     sets: Object.keys(config.sets).length,
-    chains: Object.keys(config.chains).length,
+    cascades: Object.keys(config.cascades).length,
   };
 }
 

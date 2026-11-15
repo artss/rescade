@@ -1,4 +1,4 @@
-chains:
+cascades:
   system:
     description: System files, copied to both remotes
     schedule: "0 */4 * * *"
