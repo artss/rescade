@@ -8,17 +8,21 @@
 
 ## Статус
 
-Готово: монорепо, `packages/core` (загрузчик конфигов: разбор по файлам, слияние по имени, `${VAR}`, схема zod,
-перекрёстные проверки, диагностика `файл:строка:колонка`), `packages/cli` (`rescade validate`), 59 тестов vitest,
-пример в `examples/config`.
+Готово: монорепо, `packages/core`: загрузчик конфигов (`src/config`: разбор по файлам, слияние по имени, `${VAR}`,
+схема zod, перекрёстные проверки, диагностика `файл:строка:колонка`), адаптер restic (`src/restic`: запуск процессов
+с группой и SIGTERM→SIGKILL, аргументы и окружение, ensure/init по кодам выхода), исполнитель одной цепочки
+(`src/run/chain.ts`: события, статусы шагов, код 3 как `warning`, сверка `chunker_polynomial` перед `copy`, отмена
+через `AbortSignal`). `packages/cli`: `rescade validate`, `rescade run --local <chain>`. 93 теста vitest, фейковый
+restic в `packages/core/test/fake-restic.mjs`, 6 интеграционных с настоящим restic (проверено на 0.19.1), пример в `examples/config`.
 
-Следующий шаг: адаптер restic и исполнитель одной цепочки (`run --local`), включая ensure/init репо по кодам выхода,
-сверку `chunker_polynomial` перед `copy`, обработку кода 3 как `warning`, фейковый restic для тестов.
+Следующий шаг (3): мьютексы репо (ensure уже вызывается там, где будет мьютекс: в начале шага), `on-busy`,
+планировщик, хранилище SQLite.
 
 ## Команды
 
     pnpm install
-    pnpm test                # vitest, все пакеты
+    pnpm test                # vitest, все пакеты (с фейковым restic)
+    pnpm test:integration    # с настоящим restic ($RESCADE_RESTIC или из PATH), ~30 с
     pnpm build               # сборка (project references), нужна перед запуском CLI
     pnpm validate:example    # собирает и валидирует examples/config
 
@@ -38,5 +42,16 @@
 - Неквотированный `**/venv` в YAML читается как alias (`yaml` бросает `ReferenceError` при `toJS()`), поэтому алиасы
   проверяются заранее через `visit`. В `{}` и `[]` ссылка `${VAR}` требует кавычек.
 - `true`, `123` в списке `command` YAML читает как boolean и число; сообщение об ошибке подсказывает про кавычки.
+- Нужен restic >= 0.17: только с него «репо нет» = код 10 и «неверный пароль» = код 12. На старом restic отсутствующий
+  репо даёт код 1 и считается `unreachable`, то есть init не произойдёт (безопасно, но молча не работает).
+- С `--json` ошибки restic в stderr тоже JSON, последняя строка `{"message_type":"exit_error",...}`; для лога и причины
+  отказа они переводятся в текст (`readableBackupLine`).
+- Недоступный REST/S3-бэкенд restic ретраит минутами (`cat config` на закрытый порт не закончился за 2 минуты),
+  sftp на несуществующий хост падает сразу с кодом 1. Поэтому у `cat config` таймаут (`repoCheckTimeoutMs`).
+- После SIGTERM restic дописывает в stderr шум (`signal terminated received`, `context canceled`, адрес репо);
+  для причины таймаута берётся `stderrBeforeStop`, последняя строка до сигнала.
+- На macOS дочерний процесс всегда получает `__CF_USER_TEXT_ENCODING`, даже с пустым `env`; тесты на окружение его отфильтровывают.
+- `runProcess` убивает группу процессов (`process.kill(-pid)`, `detached: true`): иначе внуки шелла держат пайпы
+  открытыми и `close` не приходит. Это единственное обращение к `process` в ядре, осознанное.
 - В режиме `--allow-missing-env` значения подменяются на `<NAME is unset>`: годится для валидации, не для запуска
   (список в `LoadResult.missingEnv`).
