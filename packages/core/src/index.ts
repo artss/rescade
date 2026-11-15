@@ -14,7 +14,7 @@ export { Runner } from "./run/runner.js";
 export type { RunnerEvent, RunnerOptions } from "./run/runner.js";
 export { Scheduler } from "./schedule.js";
 export { Store } from "./store/store.js";
-export type { LogRecord, PruneOptions, PruneResult, RunQuery, RunRecord, RunState, StepRecord, StepState, Trigger } from "./store/store.js";
+export type { LogQuery, LogRecord, PruneOptions, PruneResult, RunQuery, RunRecord, RunState, StepRecord, StepState, Trigger } from "./store/store.js";
 export { readTokenFile } from "./token.js";
 export type { TokenFile } from "./token.js";
 export { warmUp } from "./restic/warmup.js";

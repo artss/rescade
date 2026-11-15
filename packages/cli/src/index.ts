@@ -20,7 +20,7 @@ Usage:
 
   through the daemon:
   rescade run <cascade> [--detach]    start a cascade and follow it (Ctrl+C cancels it)
-  rescade status                      cascades, their last and next runs
+  rescade status                      the daemon, its config, cascades with their last and next runs
   rescade runs [--cascade <name>] [--limit <n>] [--before <id>]
   rescade show <run>                  a run and its steps
   rescade log <run> [--step <n>]      the log of a run (steps count from 1)

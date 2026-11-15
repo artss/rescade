@@ -111,8 +111,7 @@ export class Runner {
           if (run.status !== "running") setStatus("running");
           return;
         case "log": {
-          const log: LogRecord = { step: e.index, ts: Date.now(), stream: e.stream, line: e.line };
-          store.appendLog(run.id, log);
+          const log = store.appendLog(run.id, { step: e.index, ts: Date.now(), stream: e.stream, line: e.line });
           this.emit({ kind: "log", runId: run.id, log });
           return;
         }

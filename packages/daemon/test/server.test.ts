@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
@@ -6,7 +6,7 @@ import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { loadConfig, type Config, type LogRecord, type RunRecord, type StepRecord } from "@rescade/core";
 import { RepoStates } from "../src/repos.js";
-import { buildServer, DOCS_PATH, OPENAPI_PATH, type ServerDeps } from "../src/server.js";
+import { buildServer, DOCS_PATH, OPENAPI_PATH, type DaemonStatus, type ServerDeps } from "../src/server.js";
 
 const TOKEN = "test-token-0123456789";
 const HOST = "localhost:8765";
@@ -34,9 +34,15 @@ const step: StepRecord = {
   stderrTail: ["Fatal: oops"],
   summary: { files_new: 3, nested: { list: [1, 2] } },
 };
-const log: LogRecord = { step: 0, ts: 1500, stream: "stderr", line: "Fatal: oops" };
+const log: LogRecord = { id: 3, step: 0, ts: 1500, stream: "stderr", line: "Fatal: oops" };
+const status: DaemonStatus = {
+  version: "1.2.3",
+  startedAt: 500,
+  config: { path: "/etc/rescade/config", loadedAt: 600, lastReload: { at: 700, ok: false, errors: ["a.yaml:1:1: error: x"] } },
+};
 
 let dir: string;
+let deps: ServerDeps;
 let app: FastifyInstance;
 let serialized: unknown;
 
@@ -80,8 +86,9 @@ cascades:
   );
   repos.update("b", { ok: false, problem: "unreachable", reason: "no route to host" }, 1100);
 
-  const deps = {
+  deps = {
     config: () => config,
+    status: () => status,
     runner: {
       running: () => [run],
       trigger: () => run,
@@ -120,13 +127,14 @@ async function call(method: "GET" | "POST", url: string, headers: Record<string,
 
 describe("response schemas", () => {
   it.each([
-    ["GET", "/cascades", 200],
-    ["POST", "/cascades/daily/run", 202],
-    ["GET", "/runs", 200],
-    ["GET", "/runs/7", 200],
-    ["GET", "/runs/7/log", 200],
-    ["POST", "/runs/7/cancel", 202],
-    ["GET", "/repos", 200],
+    ["GET", "/api/status", 200],
+    ["GET", "/api/cascades", 200],
+    ["POST", "/api/cascades/daily/run", 202],
+    ["GET", "/api/runs", 200],
+    ["GET", "/api/runs/7", 200],
+    ["GET", "/api/runs/7/log", 200],
+    ["POST", "/api/runs/7/cancel", 202],
+    ["GET", "/api/repos", 200],
   ] as const)("%s %s keeps every field", async (method, url, status) => {
     const res = await call(method, url);
     expect(res.status).toBe(status);
@@ -135,11 +143,65 @@ describe("response schemas", () => {
   });
 
   it("keeps nested values of a backup summary and the repo state", async () => {
-    expect((await call("GET", "/runs/7")).body.steps[0].summary).toEqual(step.summary);
-    expect((await call("GET", "/repos")).body).toMatchObject([
+    expect((await call("GET", "/api/runs/7")).body.steps[0].summary).toEqual(step.summary);
+    expect((await call("GET", "/api/repos")).body).toMatchObject([
       { location: "rest:https://user:***@host/a", locks: { count: 11, error: "partly read" } },
       { state: "unreachable", lockedBy: { runId: 7 } },
     ]);
+  });
+});
+
+describe("web UI", () => {
+  let web: FastifyInstance;
+  beforeAll(async () => {
+    const webDir = path.join(dir, "web");
+    await mkdir(path.join(webDir, "assets"), { recursive: true });
+    await writeFile(path.join(webDir, "index.html"), "<!doctype html><title>rescade</title>");
+    await writeFile(path.join(webDir, "assets", "app-1a2b.js"), "console.log(1)");
+    web = await buildServer({ ...deps, webDir });
+  });
+  afterAll(() => web.close());
+
+  const get = (url: string, headers: Record<string, string> = {}) =>
+    web.inject({ method: "GET", url, headers: { host: HOST, ...headers } });
+
+  it("serves the page without the token, also for paths routed in the browser", async () => {
+    for (const url of ["/", "/runs/7", "/cascades/daily?tab=log"]) {
+      const res = await get(url);
+      expect(res.statusCode, `${url}: ${res.body}`).toBe(200);
+      expect(res.headers["content-type"]).toContain("text/html");
+      expect(res.headers["cache-control"]).toBe("no-cache");
+      expect(res.body).toContain("<title>rescade</title>");
+    }
+    expect((await get("/", { host: "evil.example" })).statusCode).toBe(403);
+  });
+
+  it("serves hashed assets as immutable and does not answer a missing file with the page", async () => {
+    const asset = await get("/assets/app-1a2b.js");
+    expect(asset.statusCode).toBe(200);
+    expect(asset.headers["cache-control"]).toBe("public, max-age=31536000, immutable");
+    expect((await get("/assets/missing.js")).statusCode).toBe(404);
+  });
+
+  it("keeps the API behind the token and its unknown paths as JSON errors", async () => {
+    expect((await get("/api/runs")).statusCode).toBe(401);
+    expect((await get("/api/nothing")).statusCode).toBe(401);
+    const missing = await get("/api/nothing", { authorization: `Bearer ${TOKEN}` });
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json()).toEqual({ error: "no route GET /api/nothing" });
+    expect((await get("/api/runs", { authorization: `Bearer ${TOKEN}` })).statusCode).toBe(200);
+    for (const url of ["/%61pi/runs", "/API/runs"]) {
+      const res = await get(url);
+      expect([200, 401, 404], url).toContain(res.statusCode);
+      expect(res.body, url).not.toContain('"cascade"');
+    }
+    expect((await get(`${DOCS_PATH}/`)).statusCode).toBe(200);
+  });
+
+  it("is absent without a web directory", async () => {
+    const res = await app.inject({ method: "GET", url: "/", headers: { host: HOST } });
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toEqual({ error: "no route GET /" });
   });
 });
 
@@ -149,7 +211,7 @@ describe("OpenAPI document", () => {
     expect(res.status).toBe(200);
     expect(res.body.openapi).toBe("3.1.0");
     expect((await call("GET", OPENAPI_PATH, { authorization: "", host: "evil.example" })).status).toBe(403);
-    expect((await call("GET", "/runs", { authorization: "" })).status).toBe(401);
+    expect((await call("GET", "/api/runs", { authorization: "" })).status).toBe(401);
   });
 
   it("shows Swagger UI without the token but behind the Host check", async () => {
@@ -159,7 +221,7 @@ describe("OpenAPI document", () => {
     expect(page.headers["content-type"]).toContain("text/html");
     const initializer = await get(`${DOCS_PATH}/static/swagger-initializer.js`);
     expect(initializer.statusCode).toBe(200);
-    expect((await get(`${DOCS_PATH}/json`)).json().paths["/runs"]).toBeDefined();
+    expect((await get(`${DOCS_PATH}/json`)).json().paths["/api/runs"]).toBeDefined();
     expect((await get(`${DOCS_PATH}/`, "evil.example")).statusCode).toBe(403);
   });
 
@@ -170,20 +232,21 @@ describe("OpenAPI document", () => {
         Object.entries(methods).map(([m, op]) => ({ op: `${m.toUpperCase()} ${p}`, codes: Object.keys(op.responses) })),
     );
     expect(operations.map((o) => o.op).sort()).toEqual([
-      "GET /cascades",
-      "GET /events",
-      "GET /repos",
-      "GET /runs",
-      "GET /runs/{id}",
-      "GET /runs/{id}/log",
-      "POST /cascades/{name}/run",
-      "POST /runs/{id}/cancel",
+      "GET /api/cascades",
+      "GET /api/events",
+      "GET /api/repos",
+      "GET /api/runs",
+      "GET /api/runs/{id}",
+      "GET /api/runs/{id}/log",
+      "GET /api/status",
+      "POST /api/cascades/{name}/run",
+      "POST /api/runs/{id}/cancel",
     ]);
     for (const { codes } of operations) {
       expect(codes.some((c) => c.startsWith("2"))).toBe(true);
       expect(codes).toEqual(expect.arrayContaining(["401", "403"]));
     }
-    expect(spec.paths["/runs/{id}"].get.responses["200"].content["application/json"].schema).toEqual({
+    expect(spec.paths["/api/runs/{id}"].get.responses["200"].content["application/json"].schema).toEqual({
       $ref: "#/components/schemas/RunWithSteps",
     });
   });

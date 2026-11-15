@@ -34,6 +34,8 @@ export interface StepRecord {
 }
 
 export interface LogRecord {
+  /** Grows with every line of every run; `after` in `Store.log` continues from it. */
+  id: number;
   step: number;
   ts: number;
   stream: LogStream;
@@ -46,6 +48,13 @@ export interface RunQuery {
   limit?: number;
   /** Only runs with a smaller id, for paging. */
   beforeId?: number;
+}
+
+export interface LogQuery {
+  /** Only this step's lines. */
+  step?: number;
+  /** Only lines with a greater id. */
+  after?: number;
 }
 
 export interface PruneOptions {
@@ -103,7 +112,7 @@ CREATE INDEX log_by_run ON log (run_id, step, seq);
 /** Run history in SQLite: runs, their steps, and step logs. */
 export class Store {
   private readonly stmts: Record<
-    "insertRun" | "updateRun" | "saveStep" | "appendLog" | "run" | "steps" | "log" | "stepLog",
+    "insertRun" | "updateRun" | "saveStep" | "appendLog" | "run" | "steps",
     StatementSync
   >;
 
@@ -121,8 +130,6 @@ export class Store {
       appendLog: db.prepare("INSERT INTO log (run_id, step, ts, stream, line) VALUES (?, ?, ?, ?, ?)"),
       run: db.prepare("SELECT * FROM runs WHERE id = ?"),
       steps: db.prepare("SELECT * FROM steps WHERE run_id = ? ORDER BY idx"),
-      log: db.prepare("SELECT step, ts, stream, line FROM log WHERE run_id = ? ORDER BY seq"),
-      stepLog: db.prepare("SELECT step, ts, stream, line FROM log WHERE run_id = ? AND step = ? ORDER BY seq"),
     };
   }
 
@@ -226,8 +233,10 @@ export class Store {
     );
   }
 
-  appendLog(runId: number, line: LogRecord): void {
-    this.stmts.appendLog.run(runId, line.step, line.ts, line.stream, line.line);
+  /** Returns the line with its id. */
+  appendLog(runId: number, line: Omit<LogRecord, "id">): LogRecord {
+    const r = this.stmts.appendLog.run(runId, line.step, line.ts, line.stream, line.line);
+    return { id: Number(r.lastInsertRowid), ...line };
   }
 
   run(id: number): (RunRecord & { steps: StepRecord[] }) | undefined {
@@ -255,15 +264,29 @@ export class Store {
       .map(toRun);
   }
 
-  /** Log lines of a run, or of one of its steps. */
-  log(runId: number, step?: number): LogRecord[] {
-    const rows = step === undefined ? this.stmts.log.all(runId) : this.stmts.stepLog.all(runId, step);
-    return rows.map((r) => ({
-      step: Number(r.step),
+  /** Log lines of a run in order, or of one of its steps. */
+  log(runId: number, query: LogQuery = {}): LogRecord[] {
+    const where = ["run_id = ?"];
+    const params: SQLInputValue[] = [runId];
+    if (query.step !== undefined) {
+      where.push("step = ?");
+      params.push(query.step);
+    }
+    if (query.after !== undefined) {
+      where.push("seq > ?");
+      params.push(query.after);
+    }
+    const sql = `SELECT seq, step, ts, stream, line FROM log WHERE ${where.join(" AND ")} ORDER BY seq`;
+    return this.db
+      .prepare(sql)
+      .all(...params)
+      .map((r) => ({
+        id: Number(r.seq),
+        step: Number(r.step),
       ts: Number(r.ts),
-      stream: r.stream as LogStream,
-      line: String(r.line),
-    }));
+        stream: r.stream as LogStream,
+        line: String(r.line),
+      }));
   }
 }
 

@@ -104,7 +104,7 @@ describe("startup", () => {
   it("initializes missing repos before serving and reports their state", async () => {
     await start();
     expect(fake.readRepo("/r/b")?.chunker_polynomial).toBe(fake.readRepo("/r/a")?.chunker_polynomial);
-    const { body } = await api("GET", "/repos");
+    const { body } = await api("GET", "/api/repos");
     expect(body).toMatchObject([
       { name: "a", location: "/r/a", state: "ok" },
       { name: "b", location: "/r/b", from: "a", state: "ok" },
@@ -120,7 +120,7 @@ describe("startup", () => {
 
   it("starts with an unreachable repo and shows it in the state", async () => {
     await start(configYaml(), { FAKE_RESTIC_UNREACHABLE: "/r/b" });
-    const { body } = await api("GET", "/repos");
+    const { body } = await api("GET", "/api/repos");
     expect(body).toMatchObject([{ name: "a", state: "ok" }, { name: "b", state: "unreachable" }]);
   });
 
@@ -137,7 +137,7 @@ describe("startup", () => {
     store.close();
 
     await start();
-    const { body } = await api("GET", `/runs/${left.id}`);
+    const { body } = await api("GET", `/api/runs/${left.id}`);
     expect(body).toMatchObject({ status: "interrupted", reason: "the daemon stopped during the run" });
   });
 
@@ -153,8 +153,8 @@ describe("startup", () => {
     store.close();
 
     await start(configYaml(), {}, { historyRetentionMs: 10 * day, logRetentionMs: day });
-    expect((await api("GET", `/runs/${old.id}`)).status).toBe(404);
-    expect((await api("GET", `/runs/${latest.id}/log`)).body).toMatchObject([{ line: "kept" }]);
+    expect((await api("GET", `/api/runs/${old.id}`)).status).toBe(404);
+    expect((await api("GET", `/api/runs/${latest.id}/log`)).body).toMatchObject([{ line: "kept" }]);
     expect(logs.find((l) => l.msg === "deleted old history")).toMatchObject({ runs: 1, logLines: 0 });
   });
 });
@@ -162,28 +162,28 @@ describe("startup", () => {
 describe("API access", () => {
   it("needs the token", async () => {
     await start();
-    expect((await api("GET", "/cascades", { authorization: "" })).status).toBe(401);
-    expect((await api("GET", "/cascades", { authorization: "Bearer wrong" })).status).toBe(401);
-    expect((await api("GET", "/cascades")).status).toBe(200);
+    expect((await api("GET", "/api/cascades", { authorization: "" })).status).toBe(401);
+    expect((await api("GET", "/api/cascades", { authorization: "Bearer wrong" })).status).toBe(401);
+    expect((await api("GET", "/api/cascades")).status).toBe(200);
   });
 
   it("answers only to allowed Host values", async () => {
     await start();
-    const res = await api("GET", "/cascades", { host: "evil.example" });
+    const res = await api("GET", "/api/cascades", { host: "evil.example" });
     expect(res.status).toBe(403);
     expect(res.body).toEqual({ error: 'host "evil.example" is not allowed' });
   });
 
   it("allows CORS only for configured origins", async () => {
     await start();
-    const pre = await api("OPTIONS" as "GET", "/cascades", { authorization: "", origin: "https://ui.example" });
+    const pre = await api("OPTIONS" as "GET", "/api/cascades", { authorization: "", origin: "https://ui.example" });
     expect(pre.status).toBe(204);
     expect(pre.headers["access-control-allow-origin"]).toBe("https://ui.example");
     expect(pre.headers["access-control-allow-headers"]).toContain("Authorization");
 
-    const other = await api("GET", "/cascades", { origin: "https://evil.example" });
+    const other = await api("GET", "/api/cascades", { origin: "https://evil.example" });
     expect(other.headers["access-control-allow-origin"]).toBeUndefined();
-    const otherPre = await api("OPTIONS" as "GET", "/cascades", { authorization: "", origin: "https://evil.example" });
+    const otherPre = await api("OPTIONS" as "GET", "/api/cascades", { authorization: "", origin: "https://evil.example" });
     expect(otherPre.status).toBe(401);
   });
 });
@@ -191,57 +191,60 @@ describe("API access", () => {
 describe("runs over the API", () => {
   it("runs a cascade and shows the run, its steps and log", async () => {
     await start();
-    const started = await api("POST", "/cascades/daily/run");
+    const started = await api("POST", "/api/cascades/daily/run");
     expect(started.status).toBe(202);
     expect(started.body).toMatchObject({ cascade: "daily", trigger: "manual", status: "running" });
 
-    const run = await until(() => api("GET", `/runs/${started.body.id}`), finished, "the run to finish");
+    const run = await until(() => api("GET", `/api/runs/${started.body.id}`), finished, "the run to finish");
     expect(run.body).toMatchObject({ status: "success", steps: [{ label: "retain a", status: "success" }] });
-    const log = await api("GET", `/runs/${started.body.id}/log?step=0`);
+    const log = await api("GET", `/api/runs/${started.body.id}/log?step=0`);
     expect(log.body.map((l: { line: string }) => l.line)).toContain("Applying Policy: keep 7 daily snapshots");
+    const all = (await api("GET", `/api/runs/${started.body.id}/log`)).body as Array<{ id: number }>;
+    const rest = await api("GET", `/api/runs/${started.body.id}/log?after=${all[0]!.id}`);
+    expect(rest.body).toEqual(all.slice(1));
 
-    const cascades = await api("GET", "/cascades");
+    const cascades = await api("GET", "/api/cascades");
     const daily = cascades.body.find((c: { name: string }) => c.name === "daily");
     expect(daily).toMatchObject({ schedule: ["0 3 * * *"], steps: [{ type: "retain", label: "retain a" }], active: null });
     expect(daily.lastRun.id).toBe(started.body.id);
     expect(daily.nextRun).toBeGreaterThan(Date.now());
 
-    expect((await api("GET", "/runs?cascade=daily&limit=5")).body.map((r: RunRecord) => r.id)).toEqual([started.body.id]);
-    expect((await api("POST", `/runs/${started.body.id}/cancel`)).status).toBe(409);
+    expect((await api("GET", "/api/runs?cascade=daily&limit=5")).body.map((r: RunRecord) => r.id)).toEqual([started.body.id]);
+    expect((await api("POST", `/api/runs/${started.body.id}/cancel`)).status).toBe(409);
   });
 
   it("validates ids and reports unknown things", async () => {
     await start();
-    expect((await api("POST", "/cascades/nope/run")).status).toBe(404);
-    expect((await api("GET", "/runs/999")).status).toBe(404);
-    expect((await api("GET", "/runs/abc")).status).toBe(400);
-    expect((await api("GET", "/runs?limit=0")).status).toBe(400);
-    expect((await api("POST", "/runs/999/cancel")).status).toBe(404);
-    expect((await api("GET", "/nothing")).status).toBe(404);
+    expect((await api("POST", "/api/cascades/nope/run")).status).toBe(404);
+    expect((await api("GET", "/api/runs/999")).status).toBe(404);
+    expect((await api("GET", "/api/runs/abc")).status).toBe(400);
+    expect((await api("GET", "/api/runs?limit=0")).status).toBe(400);
+    expect((await api("POST", "/api/runs/999/cancel")).status).toBe(404);
+    expect((await api("GET", "/api/nothing")).status).toBe(404);
   });
 
   it("cancels a run and shows who holds a repo", async () => {
     await start();
-    const started = await api("POST", "/cascades/slow/run");
-    await until(() => api("GET", "/repos"), (r) => r.body[1]?.lockedBy !== undefined, "slow to take repo b");
-    expect((await api("GET", "/repos")).body[1].lockedBy).toEqual({ runId: started.body.id, cascade: "slow" });
-    expect((await api("POST", "/cascades/slow/run")).body).toMatchObject({ status: "skipped" });
+    const started = await api("POST", "/api/cascades/slow/run");
+    await until(() => api("GET", "/api/repos"), (r) => r.body[1]?.lockedBy !== undefined, "slow to take repo b");
+    expect((await api("GET", "/api/repos")).body[1].lockedBy).toEqual({ runId: started.body.id, cascade: "slow" });
+    expect((await api("POST", "/api/cascades/slow/run")).body).toMatchObject({ status: "skipped" });
 
-    expect((await api("POST", `/runs/${started.body.id}/cancel`)).status).toBe(202);
-    const run = await until(() => api("GET", `/runs/${started.body.id}`), finished, "the run to stop");
+    expect((await api("POST", `/api/runs/${started.body.id}/cancel`)).status).toBe(202);
+    const run = await until(() => api("GET", `/api/runs/${started.body.id}`), finished, "the run to stop");
     expect(run.body.status).toBe("cancelled");
   });
 
   it("streams events of a cascade over SSE", async () => {
     await start();
     const ac = new AbortController();
-    const res = await fetch(`http://${daemon!.address}/events?cascade=daily`, {
+    const res = await fetch(`http://${daemon!.address}/api/events?cascade=daily`, {
       headers: { authorization: `Bearer ${TOKEN}` },
       signal: ac.signal,
     });
     expect(res.headers.get("content-type")).toBe("text/event-stream");
-    await api("POST", "/cascades/slow/run");
-    await api("POST", "/cascades/daily/run");
+    await api("POST", "/api/cascades/slow/run");
+    await api("POST", "/api/cascades/daily/run");
 
     const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
     let text = "";
@@ -266,20 +269,32 @@ describe("reload and stop", () => {
   it("takes a new config on reload and keeps the old one when the new one is broken", async () => {
     await start();
     const configFile = path.join(fake.dir, "rescade.yaml");
+    const before = (await api("GET", "/api/status")).body;
+    expect(before).toEqual({
+      version: expect.stringMatching(/^\d+\.\d+\.\d+/),
+      startedAt: expect.any(Number),
+      config: { path: configFile, loadedAt: before.startedAt },
+    });
+
     await writeFile(configFile, configYaml("  weekly:\n    steps:\n      - check: { repo: a }\n"));
     expect(await daemon!.reload()).toBe(true);
-    expect((await api("GET", "/cascades")).body.map((c: { name: string }) => c.name)).toEqual(["daily", "slow", "weekly"]);
+    expect((await api("GET", "/api/cascades")).body.map((c: { name: string }) => c.name)).toEqual(["daily", "slow", "weekly"]);
+    const reloaded = (await api("GET", "/api/status")).body;
+    expect(reloaded.config.lastReload).toEqual({ at: reloaded.config.loadedAt, ok: true, errors: [] });
 
     await writeFile(configFile, "cascades: [");
     expect(await daemon!.reload()).toBe(false);
-    expect((await api("GET", "/cascades")).body).toHaveLength(3);
+    expect((await api("GET", "/api/cascades")).body).toHaveLength(3);
     expect(logs.some((l) => l.msg === "config reload failed, keeping the current config")).toBe(true);
+    const failed = (await api("GET", "/api/status")).body;
+    expect(failed.config.loadedAt).toBe(reloaded.config.loadedAt);
+    expect(failed.config.lastReload).toMatchObject({ ok: false, errors: [expect.stringContaining("rescade.yaml:1:")] });
   });
 
   it("interrupts runs in progress when stopping", async () => {
     await start();
-    const started = await api("POST", "/cascades/slow/run");
-    await until(() => api("GET", "/repos"), (r) => r.body[1]?.lockedBy !== undefined, "slow to take repo b");
+    const started = await api("POST", "/api/cascades/slow/run");
+    await until(() => api("GET", "/api/repos"), (r) => r.body[1]?.lockedBy !== undefined, "slow to take repo b");
     const d = daemon!;
     daemon = undefined;
     await d.stop();

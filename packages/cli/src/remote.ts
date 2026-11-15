@@ -25,6 +25,13 @@ interface RepoView {
   lockedBy?: { runId: number; cascade: string };
 }
 
+/** `GET /status`. */
+interface DaemonView {
+  version: string;
+  startedAt: number;
+  config: { path: string; loadedAt: number; lastReload?: { at: number; ok: boolean; errors: string[] } };
+}
+
 const print = (value: unknown) => process.stdout.write(JSON.stringify(value, null, 2) + "\n");
 const finished = (status: string) => status !== "running" && status !== "queued";
 const exitCode = (status: RunRecord["status"]) => (finished(status) ? RUN_EXIT[status as keyof typeof RUN_EXIT] : 1);
@@ -124,11 +131,19 @@ function printEvent(e: ServerEvent, runId: number, tag: (index: number) => strin
 }
 
 export async function status(client: ApiClient, json: boolean): Promise<number> {
-  const cascades = await client.get<CascadeView[]>("/cascades");
+  const [daemon, cascades] = await Promise.all([client.get<DaemonView>("/status"), client.get<CascadeView[]>("/cascades")]);
   if (json) {
-    print(cascades);
+    print({ daemon, cascades });
     return 0;
   }
+  const { config } = daemon;
+  console.log(`rescaded ${daemon.version}, up since ${formatTime(daemon.startedAt)}`);
+  console.log(`config ${config.path}, loaded ${formatTime(config.loadedAt)}`);
+  if (config.lastReload && !config.lastReload.ok) {
+    console.log(`reload at ${formatTime(config.lastReload.at)} failed, the config loaded before stays in use:`);
+    for (const e of config.lastReload.errors) console.log(`  ${e}`);
+  }
+  console.log();
   const rows = [["CASCADE", "LAST RUN", "NEXT RUN", "NOW"]];
   for (const c of cascades) {
     const last = c.lastRun ? `${c.lastRun.status} ${formatTime(c.lastRun.startedAt)} (run ${c.lastRun.id})` : "-";

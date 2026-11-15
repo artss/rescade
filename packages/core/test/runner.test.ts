@@ -59,8 +59,10 @@ describe("runner", () => {
       ["retain a", "success"],
     ]);
     expect(run.steps[0]?.summary).toMatchObject({ files_new: 2 });
-    expect(store.log(started.id, 1).map((l) => l.line)).toEqual(["Applying Policy: keep 7 daily snapshots"]);
+    expect(store.log(started.id, { step: 1 }).map((l) => l.line)).toEqual(["Applying Policy: keep 7 daily snapshots"]);
     expect(store.log(started.id).some((l) => l.step === 0 && l.stream === "info")).toBe(true);
+    const logEvents = events.flatMap((e) => (e.kind === "log" ? [e.log] : []));
+    expect(logEvents).toEqual(store.log(started.id));
 
     const runEvents = events.flatMap((e) => (e.kind === "run" ? [e.run.status] : []));
     expect(runEvents).toEqual(["running", "success"]);
@@ -188,6 +190,21 @@ describe("store", () => {
     expect(store.runs({ cascade: "a", limit: 2 }).map((r) => r.id)).toEqual([4, 3]);
     expect(store.runs({ cascade: "a", beforeId: 3 }).map((r) => r.id)).toEqual([1]);
     expect(store.run(99)).toBeUndefined();
+  });
+
+  it("continues a log after a line id, also within a step", () => {
+    const run = store.insertRun({ cascade: "daily", trigger: "manual", status: "running", startedAt: 0 });
+    const other = store.insertRun({ cascade: "weekly", trigger: "manual", status: "running", startedAt: 0 });
+    const add = (runId: number, step: number, line: string) => store.appendLog(runId, { step, ts: 0, stream: "stdout", line });
+    const first = add(run.id, 0, "a");
+    add(other.id, 0, "other");
+    const second = add(run.id, 0, "b");
+    add(run.id, 1, "c");
+    expect(second.id).toBeGreaterThan(first.id);
+    expect(store.log(run.id).map((l) => l.line)).toEqual(["a", "b", "c"]);
+    expect(store.log(run.id, { after: first.id }).map((l) => l.line)).toEqual(["b", "c"]);
+    expect(store.log(run.id, { step: 0, after: first.id })).toEqual([second]);
+    expect(store.log(run.id, { after: second.id + 100 })).toEqual([]);
   });
 
   it("prunes old runs and old logs, keeping runs in progress and the latest run of each cascade", () => {

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
@@ -13,7 +14,7 @@ import {
   type RunnerEvent,
 } from "@rescade/core";
 import { RepoStates } from "./repos.js";
-import { buildServer } from "./server.js";
+import { buildServer, type DaemonStatus } from "./server.js";
 import { allowedHosts, type Settings } from "./settings.js";
 
 export { readSettings, SettingsError, USAGE, type Settings } from "./settings.js";
@@ -39,13 +40,20 @@ export class StartupError extends Error {}
 
 const PRUNE_INTERVAL_MS = 60 * 60 * 1000;
 
+// the same path from src (tests) and dist
+const VERSION = (JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string })
+  .version;
+
 /**
  * Loads the config, opens the history, warms up the repos (fatal errors on reachable repos stop the start),
  * then starts the runner, the scheduler and the API.
  */
 export async function startDaemon(settings: Settings, logger: Logger, options: DaemonOptions): Promise<Daemon> {
-  let config = await readConfig(settings.configDir, logger);
-  if (!config) throw new StartupError("the config has errors");
+  const startedAt = Date.now();
+  const loaded = await readConfig(settings.configDir, logger);
+  if (!loaded.config) throw new StartupError("the config has errors");
+  let config = loaded.config;
+  const status: DaemonStatus = { version: VERSION, startedAt, config: { path: settings.configDir, loadedAt: startedAt } };
 
   await mkdir(settings.dataDir, { recursive: true, mode: 0o700 });
   const store = await Store.open(path.join(settings.dataDir, "rescade.db"));
@@ -112,7 +120,8 @@ export async function startDaemon(settings: Settings, logger: Logger, options: D
 
     const hosts = new Set<string>();
     const app = await buildServer({
-      config: () => config!,
+      config: () => config,
+      status: () => status,
       runner,
       scheduler,
       store,
@@ -136,12 +145,15 @@ export async function startDaemon(settings: Settings, logger: Logger, options: D
       app,
       address,
       async reload() {
-        const next = await readConfig(settings.configDir, logger);
+        const at = Date.now();
+        const { config: next, errors } = await readConfig(settings.configDir, logger);
+        status.config.lastReload = { at, ok: next !== undefined, errors };
         if (!next) {
           logger.error("config reload failed, keeping the current config");
           return false;
         }
         config = next;
+        status.config.loadedAt = at;
         runner.setConfig(next);
         scheduler.update(next.cascades);
         logger.info({ cascades: Object.keys(next.cascades).length }, "config reloaded");
@@ -167,12 +179,16 @@ export async function startDaemon(settings: Settings, logger: Logger, options: D
   }
 }
 
-async function readConfig(dir: string, logger: Logger): Promise<Config | undefined> {
+/** Loads and logs the diagnostics; `config` is absent when there are errors. */
+async function readConfig(dir: string, logger: Logger): Promise<{ config?: Config; errors: string[] }> {
   const loaded = await loadConfig({ path: dir });
+  const errors: string[] = [];
   for (const d of loaded.diagnostics) {
-    logger[d.severity === "error" ? "error" : "warn"]({ file: d.file, line: d.line, col: d.col }, formatDiagnostic(d));
+    const text = formatDiagnostic(d);
+    if (d.severity === "error") errors.push(text);
+    logger[d.severity === "error" ? "error" : "warn"]({ file: d.file, line: d.line, col: d.col }, text);
   }
-  return loaded.ok ? loaded.config : undefined;
+  return loaded.ok ? { config: loaded.config, errors } : { errors };
 }
 
 function logEvent(logger: Logger, e: RunnerEvent): void {
