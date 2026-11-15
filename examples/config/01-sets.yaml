@@ -4,11 +4,11 @@ sets:
     exclude: [/var/run]
 
   home:
-    include: [/home/arts]
-    exclude: [/home/arts/tmp, /home/arts/projects]
+    include: [/home/user]
+    exclude: [/home/user/tmp, /home/user/projects]
 
   projects:
-    include: [/home/arts/projects]
+    include: [/home/user/projects]
     exclude:
       - "**/venv"
       - "**/node_modules"

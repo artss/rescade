@@ -1,6 +1,6 @@
 repos:
   system-local:
-    path: /mnt/seagate/backups/system
+    path: /mnt/backups/system
     password: ${SYSTEM_LOCAL_PASSWORD}
     retention: { hourly: 24, daily: 7, weekly: 4, monthly: 12, yearly: 2 }
 
@@ -17,7 +17,7 @@ repos:
     retention: { weekly: 12, monthly: 36, yearly: 10 }
 
   home-local:
-    path: /mnt/seagate/backups/home
+    path: /mnt/backups/home
     password: ${HOME_LOCAL_PASSWORD}
     retention: { daily: 14, weekly: 8, monthly: 12 }
 
