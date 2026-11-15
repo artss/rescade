@@ -4,6 +4,8 @@ import { parseDuration, readTokenFile } from "@rescade/core";
 export const DEFAULT_ADDR = "127.0.0.1:8765";
 export const DEFAULT_DATA_DIR = "/var/lib/rescade";
 export const DEFAULT_TOKEN_FILE = "/etc/rescade/token";
+export const DEFAULT_HISTORY_RETENTION = "180d";
+export const DEFAULT_LOG_RETENTION = "30d";
 
 export interface Settings {
   host: string;
@@ -12,6 +14,10 @@ export interface Settings {
   dataDir: string;
   restic: string;
   repoCheckTimeoutMs?: number;
+  /** Finished runs older than this are deleted; undefined keeps them forever. */
+  historyRetentionMs?: number;
+  /** Finished runs older than this lose their log lines. */
+  logRetentionMs?: number;
   token: string;
   /** RESCADE_ALLOWED_HOSTS: Host header values accepted besides loopback and the listen address. */
   extraHosts: string[];
@@ -38,6 +44,9 @@ Options (and the environment variables they override):
 
 Environment:
   RESCADE_REPO_CHECK_TIMEOUT   how long to wait for a repo to answer, e.g. "30s" (default 2m)
+  RESCADE_HISTORY_RETENTION    how long to keep finished runs, e.g. "90d" (default ${DEFAULT_HISTORY_RETENTION}, 0 = forever)
+  RESCADE_LOG_RETENTION        how long to keep the log lines of finished runs (default ${DEFAULT_LOG_RETENTION},
+                               0 = as long as the run); the latest run of each cascade is always kept
   RESCADE_ALLOWED_HOSTS        extra values of the Host header to accept, comma-separated,
                                "host" or "host:port" (needed when listening on a public address)
   RESCADE_CORS_ORIGINS         origins allowed to call the API from a browser, comma-separated
@@ -81,15 +90,16 @@ export async function readSettings(
 
   const { host, port } = parseAddr(pick(values.addr, "RESCADE_ADDR", DEFAULT_ADDR));
 
-  let repoCheckTimeoutMs: number | undefined;
-  const checkTimeout = env.RESCADE_REPO_CHECK_TIMEOUT;
-  if (checkTimeout !== undefined && checkTimeout !== "") {
+  /** With a fallback (the retention settings) "0" means no limit. */
+  const durationVar = (name: string, fallback?: string): number | undefined => {
+    const value = env[name] || fallback;
+    if (value === undefined || (fallback !== undefined && value === "0")) return undefined;
     try {
-      repoCheckTimeoutMs = parseDuration(checkTimeout);
+      return parseDuration(value);
     } catch {
-      throw new SettingsError(`RESCADE_REPO_CHECK_TIMEOUT: expected a duration such as "30s" or "5m", got "${checkTimeout}"`);
+      throw new SettingsError(`${name}: expected a duration such as "30s", "5m" or "90d", got "${value}"`);
     }
-  }
+  };
 
   const logLevel = pick(values["log-level"], "RESCADE_LOG_LEVEL", "info");
   if (!LOG_LEVELS.has(logLevel)) throw new SettingsError(`unknown log level "${logLevel}"`);
@@ -100,7 +110,9 @@ export async function readSettings(
     configDir: pick(values["config-dir"], "RESCADE_CONFIG_DIR", "config"),
     dataDir: pick(values["data-dir"], "RESCADE_DATA_DIR", DEFAULT_DATA_DIR),
     restic: pick(values.restic, "RESCADE_RESTIC", "restic"),
-    repoCheckTimeoutMs,
+    repoCheckTimeoutMs: durationVar("RESCADE_REPO_CHECK_TIMEOUT"),
+    historyRetentionMs: durationVar("RESCADE_HISTORY_RETENTION", DEFAULT_HISTORY_RETENTION),
+    logRetentionMs: durationVar("RESCADE_LOG_RETENTION", DEFAULT_LOG_RETENTION),
     token: await readToken(values["token-file"], env, warn),
     extraHosts: list(env.RESCADE_ALLOWED_HOSTS),
     corsOrigins: new Set(list(env.RESCADE_CORS_ORIGINS)),

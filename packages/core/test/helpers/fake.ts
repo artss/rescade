@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -42,9 +42,11 @@ export class FakeState {
       .map((l) => JSON.parse(l) as Call);
   }
 
-  /** Calls as "cmd repo" strings, e.g. "init /r/b", for compact assertions. */
+  /** Calls as "cmd repo" strings, e.g. "init /r/b", for compact assertions; lock reading is left out. */
   trace(): string[] {
-    return this.calls().map((c) => `${c.cmd}${c.cmd === "cat" ? " " + c.args[0] : ""} ${c.repo}`);
+    return this.calls()
+      .filter((c) => c.cmd !== "list" && !(c.cmd === "cat" && c.args[0] === "lock"))
+      .map((c) => `${c.cmd}${c.cmd === "cat" ? " " + c.args[0] : ""} ${c.repo}`);
   }
 
   private repoFile(repoPath: string): string {
@@ -62,6 +64,12 @@ export class FakeState {
       this.repoFile(repoPath),
       JSON.stringify({ id: "f".repeat(64), chunker_polynomial: polynomial, password }),
     );
+  }
+
+  /** Lock files the repo has, as `restic cat lock` shows them plus the id. */
+  writeLocks(repoPath: string, locks: Array<Record<string, unknown> & { id: string }>): void {
+    mkdirSync(path.join(this.dir, "locks"), { recursive: true });
+    writeFileSync(path.join(this.dir, "locks", encodeURIComponent(repoPath) + ".json"), JSON.stringify(locks));
   }
 
   get sigtermReceived(): boolean {

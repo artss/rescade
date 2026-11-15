@@ -1,4 +1,4 @@
-import type { Config, EnsureResult, LockOwner, RepoLocks, RepoProblem } from "@rescade/core";
+import type { Config, EnsureResult, LockOwner, RepoLockList, RepoLocks, RepoProblem } from "@rescade/core";
 
 export interface RepoView {
   name: string;
@@ -11,6 +11,9 @@ export interface RepoView {
   checkedAt?: number;
   id?: string;
   chunkerPolynomial?: string;
+  /** restic lock files found at the last check (rescade's own restic was not running then). */
+  locks?: RepoLockList;
+  /** The rescade run whose step holds the repo now. */
   lockedBy?: LockOwner;
 }
 
@@ -38,6 +41,7 @@ export class RepoStates {
           view.state = "ok";
           view.id = c.result.config.id;
           view.chunkerPolynomial = c.result.config.chunkerPolynomial;
+          view.locks = c.result.locks;
         } else {
           view.state = c.result.problem;
           view.reason = c.result.reason;

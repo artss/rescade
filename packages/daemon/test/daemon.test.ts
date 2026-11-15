@@ -44,7 +44,11 @@ cascades:
 ${extra}`;
 }
 
-async function start(yaml = configYaml(), env: Record<string, string> = {}): Promise<Daemon> {
+async function start(
+  yaml = configYaml(),
+  env: Record<string, string> = {},
+  extra: Partial<Settings> = {},
+): Promise<Daemon> {
   const configFile = path.join(fake.dir, "rescade.yaml");
   await writeFile(configFile, yaml);
   const settings: Settings = {
@@ -57,6 +61,7 @@ async function start(yaml = configYaml(), env: Record<string, string> = {}): Pro
     extraHosts: [],
     corsOrigins: new Set(["https://ui.example"]),
     logLevel: "info",
+    ...extra,
   };
   const sink = new Writable({
     write(chunk: Buffer, _enc, done) {
@@ -134,6 +139,23 @@ describe("startup", () => {
     await start();
     const { body } = await api("GET", `/runs/${left.id}`);
     expect(body).toMatchObject({ status: "interrupted", reason: "the daemon stopped during the run" });
+  });
+
+  it("deletes old history at start", async () => {
+    const dataDir = path.join(fake.dir, "data");
+    const { mkdir } = await import("node:fs/promises");
+    await mkdir(dataDir);
+    const store = await Store.open(path.join(dataDir, "rescade.db"));
+    const day = 86_400_000;
+    const old = store.insertRun({ cascade: "daily", trigger: "schedule", status: "success", startedAt: 1, finishedAt: 2 });
+    const latest = store.insertRun({ cascade: "daily", trigger: "schedule", status: "success", startedAt: 3, finishedAt: 4 });
+    store.appendLog(latest.id, { step: 0, ts: 3, stream: "stdout", line: "kept" });
+    store.close();
+
+    await start(configYaml(), {}, { historyRetentionMs: 10 * day, logRetentionMs: day });
+    expect((await api("GET", `/runs/${old.id}`)).status).toBe(404);
+    expect((await api("GET", `/runs/${latest.id}/log`)).body).toMatchObject([{ line: "kept" }]);
+    expect(logs.find((l) => l.msg === "deleted old history")).toMatchObject({ runs: 1, logLines: 0 });
   });
 });
 

@@ -3,11 +3,12 @@
 //
 // State in $FAKE_RESTIC_STATE:
 //   repos/<encoded path>.json   { id, chunker_polynomial, password }
+//   locks/<encoded path>.json   [{ id, time, exclusive, hostname, username, pid }], lock files left in the repo
 //   calls.jsonl                 one line per call: { cmd, args, options, repo, from, ... }
 //   sigterm                     created when a hanging call receives SIGTERM
 //
 // Switches (environment):
-//   FAKE_RESTIC_EXIT_<CMD>=n     fail <CMD> (BACKUP, INIT, CAT, COPY, CHECK, FORGET, PRUNE) with exit code n;
+//   FAKE_RESTIC_EXIT_<CMD>=n     fail <CMD> (BACKUP, INIT, CAT, COPY, CHECK, FORGET, PRUNE, LIST) with exit code n;
 //                                backup still prints its summary, as real restic does for code 3
 //   FAKE_RESTIC_UNREACHABLE=a,b  repository paths that fail like an unreachable host (exit 1)
 //   FAKE_RESTIC_HANG=<cmd>       hang in <cmd> until signalled; SIGTERM exits with 130
@@ -98,9 +99,24 @@ if (env.FAKE_RESTIC_HANG === cmd) {
   run();
 }
 
+function locks() {
+  const f = path.join(state, "locks", encodeURIComponent(repoPath) + ".json");
+  return fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, "utf8")) : [];
+}
+
 function run() {
   switch (cmd) {
+    case "list": {
+      for (const lock of locks()) console.log(lock.id);
+      return;
+    }
     case "cat": {
+      if (args[0] === "lock") {
+        const id = args.find((a) => /^[0-9a-f]{64}$/.test(a));
+        const { id: _, ...lock } = locks().find((l) => l.id === id) ?? fatal(1, `no lock ${id}`);
+        console.log(JSON.stringify(lock, null, 2));
+        return;
+      }
       const repo = open(repoPath, env.RESTIC_PASSWORD);
       console.log(JSON.stringify({ version: 2, id: repo.id, chunker_polynomial: repo.chunker_polynomial }, null, 2));
       return;

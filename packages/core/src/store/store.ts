@@ -48,6 +48,19 @@ export interface RunQuery {
   beforeId?: number;
 }
 
+export interface PruneOptions {
+  now: number;
+  /** Runs finished longer ago are deleted with their steps and log. */
+  historyMs?: number;
+  /** Runs finished longer ago lose their log lines; the run and its steps stay. */
+  logMs?: number;
+}
+
+export interface PruneResult {
+  runs: number;
+  logLines: number;
+}
+
 const SCHEMA_VERSION = 1;
 
 // the log lives in its own table, without a foreign key, so it can be rotated apart from run metadata
@@ -151,6 +164,33 @@ export class Store {
       .prepare(`UPDATE runs SET status = 'interrupted', reason = ?, finished_at = ? WHERE ${unfinished}`)
       .run(reason, at);
     return Number(r.changes);
+  }
+
+  /**
+   * Deletes old history. Runs in progress are never touched, nor the latest run of each cascade
+   * (a cascade that runs once a month still shows its last run).
+   */
+  prune(opts: PruneOptions): PruneResult {
+    const old = `SELECT id FROM runs WHERE finished_at IS NOT NULL AND finished_at < ?
+                   AND id NOT IN (SELECT MAX(id) FROM runs GROUP BY cascade)`;
+    let runs = 0;
+    let logLines = 0;
+    this.db.exec("BEGIN");
+    try {
+      if (opts.historyMs !== undefined) {
+        const before = opts.now - opts.historyMs;
+        logLines += Number(this.db.prepare(`DELETE FROM log WHERE run_id IN (${old})`).run(before).changes);
+        runs = Number(this.db.prepare(`DELETE FROM runs WHERE id IN (${old})`).run(before).changes);
+      }
+      if (opts.logMs !== undefined) {
+        logLines += Number(this.db.prepare(`DELETE FROM log WHERE run_id IN (${old})`).run(opts.now - opts.logMs).changes);
+      }
+      this.db.exec("COMMIT");
+    } catch (e) {
+      this.db.exec("ROLLBACK");
+      throw e;
+    }
+    return { runs, logLines };
   }
 
   insertRun(run: Omit<RunRecord, "id">): RunRecord {

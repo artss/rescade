@@ -17,12 +17,13 @@
 события), планировщик (`src/schedule.ts`, croner), хранилище (`src/store/store.ts`, `node:sqlite`).
 Прогрев репо при старте (`src/restic/warmup.ts`), чтение токена (`src/token.ts`).
 `packages/daemon`: `rescaded` (`settings.ts` флаги/env/токен/Host, `server.ts` Fastify-маршруты и SSE, `daemon.ts` запуск,
-SIGHUP, остановка с `interrupted`, `repos.ts` состояние репо в памяти). `packages/cli`: `validate`, `run --local`, а через
+SIGHUP, остановка с `interrupted`, чистка истории раз в час, `repos.ts` состояние репо в памяти). Срок хранения истории
+и логов `Store.prune`, локи restic `src/restic/lockfiles.ts` (читаются в ensure перед каждым шагом). `packages/cli`: `validate`, `run --local`, а через
 демон `run [--detach]`, `status`, `runs`, `show`, `log`, `cancel`, `repos` (`client.ts` HTTP и SSE, `remote.ts` команды).
-146 тестов vitest, фейковый restic в `packages/core/test/fake-restic.mjs`, 6 интеграционных с настоящим restic
+152 теста vitest, фейковый restic в `packages/core/test/fake-restic.mjs`, 7 интеграционных с настоящим restic
 (проверено на 0.19.1), пример в `examples/config`.
 
-Следующий шаг (5): ротация логов и срок хранения истории, swagger, stale-lock'и restic в статусе репо.
+Следующий шаг (6): swagger (OpenAPI по схемам маршрутов), потом (7) веб-интерфейс.
 
 ## Команды
 
@@ -70,5 +71,7 @@ SIGHUP, остановка с `interrupted`, `repos.ts` состояние ре�
   каждого лога была бы предупреждением `node:sqlite`. `tsc` не ставит бит исполнения на `dist/*.js`.
 - `fetch` в Node отказывается ходить на «плохие» порты (1, 9 и др.) с `bad port`; в тестах на «нет связи» брать свободный порт.
 - Разрешённые `Host` считаются после `listen`: при `port: 0` настоящий порт известен только тогда.
+- Локи читаются с `--no-lock`, чтобы не оставлять своих; короткий id `restic cat lock` не принимает, нужен полный (64 hex).
+- `fake.trace()` не показывает чтение локов (`list`, `cat lock`), чтобы старые проверки последовательностей вызовов не менялись.
 - В режиме `--allow-missing-env` значения подменяются на `<NAME is unset>`: годится для валидации, не для запуска
   (список в `LoadResult.missingEnv`).

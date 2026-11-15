@@ -190,6 +190,36 @@ describe("store", () => {
     expect(store.run(99)).toBeUndefined();
   });
 
+  it("prunes old runs and old logs, keeping runs in progress and the latest run of each cascade", () => {
+    const add = (cascade: string, finishedAt?: number) => {
+      const run = store.insertRun({
+        cascade,
+        trigger: "schedule",
+        status: finishedAt === undefined ? "running" : "success",
+        startedAt: 0,
+        ...(finishedAt === undefined ? {} : { finishedAt }),
+      });
+      store.saveStep({ runId: run.id, index: 0, type: "check", label: "check a", status: "success" });
+      store.appendLog(run.id, { step: 0, ts: 0, stream: "stdout", line: `line of ${run.id}` });
+      return run.id;
+    };
+    const ancient = add("daily", 10); // older than the history limit
+    const old = add("daily", 500); // older than the log limit only
+    const running = add("daily"); // still in progress, never finished
+    const monthly = add("monthly", 10); // ancient, but the latest run of its cascade
+    const fresh = add("daily", 950);
+
+    expect(store.prune({ now: 1000, historyMs: 900, logMs: 100 })).toEqual({ runs: 1, logLines: 2 });
+    expect(store.run(ancient)).toBeUndefined();
+    expect(store.log(ancient)).toEqual([]);
+    expect(store.run(old)?.steps).toHaveLength(1);
+    expect(store.log(old)).toEqual([]);
+    for (const id of [running, monthly, fresh]) expect(store.log(id)).toHaveLength(1);
+
+    // without limits nothing goes
+    expect(store.prune({ now: 10_000 })).toEqual({ runs: 0, logLines: 0 });
+  });
+
   it("keeps the history in a file across reopening", async () => {
     const file = path.join(fake.dir, "rescade.db");
     const first = await Store.open(file);
@@ -271,6 +301,45 @@ describe("warm-up", () => {
     expect(r.mismatches).toEqual([
       'repo "c" was created from "a" but its chunker parameters differ (cccc vs aaaa); copied data will not deduplicate',
     ]);
+  });
+
+  it("reads the lock files left in existing repos and tells stale ones", async () => {
+    fake.writeRepo("/r/a", "pw-a");
+    fake.writeRepo("/r/c", "pw-c");
+    const at = (agoMs: number) => new Date(Date.now() - agoMs).toISOString();
+    const lock = { exclusive: true, hostname: "nas", username: "root", pid: 42, uid: 0, gid: 0 };
+    fake.writeLocks("/r/a", [
+      { id: "1".repeat(64), time: at(60 * 60_000), ...lock },
+      { id: "2".repeat(64), time: at(60_000), ...lock, exclusive: false },
+    ]);
+    fake.writeLocks("/r/c", [{ id: "3".repeat(64), time: "not a time" }]);
+    const r = await warmUp(baseConfig(), ctx(), () => {});
+
+    const a = r.results.get("a");
+    expect(a?.ok && a.locks).toEqual({
+      count: 2,
+      locks: [
+        { id: "1".repeat(64), time: expect.any(Number), exclusive: true, hostname: "nas", username: "root", pid: 42, stale: true },
+        { id: "2".repeat(64), time: expect.any(Number), exclusive: false, hostname: "nas", username: "root", pid: 42, stale: false },
+      ],
+    });
+    // b was just created: nothing to read
+    const b = r.results.get("b");
+    expect(b?.ok && b.locks).toEqual({ count: 0, locks: [] });
+    expect(fake.calls().filter((c) => c.repo === "sftp:host:/r/b").map((c) => c.cmd)).toEqual(["cat", "init", "cat"]);
+    const c = r.results.get("c");
+    expect(c?.ok && c.locks).toEqual({ count: 1, locks: [], error: `unexpected output of "restic cat lock ${"3".repeat(64)}"` });
+    expect(fake.calls().find((x) => x.cmd === "cat" && x.args[0] === "lock" && x.repo === "/r/a")?.args).toEqual(["lock", "--no-lock", "1".repeat(64)]);
+  });
+
+  it("keeps a repo usable when its locks cannot be listed", async () => {
+    fake.writeRepo("/r/a", "pw-a");
+    const r = await warmUp(baseConfig(), { ...ctx(), env: fake.env({ FAKE_RESTIC_EXIT_LIST: "1" }) }, () => {});
+    expect(r.results.get("a")).toMatchObject({
+      ok: true,
+      locks: { count: 0, locks: [], error: "cannot list locks: Fatal: fake failure in list" },
+    });
+    expect(r.fatal).toEqual([]);
   });
 
   it("treats a wrong password as fatal and an unreachable repo as not", async () => {
