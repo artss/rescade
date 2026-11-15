@@ -2,7 +2,7 @@ import { mkdtemp, realpath, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { runCascade, type Cascade, type RunEvent, type RunOptions, type Step } from "../src/index.js";
+import { RepoLocks, runCascade, type Cascade, type RunEvent, type RunOptions, type Step } from "../src/index.js";
 import { baseConfig, FAKE_RESTIC, FakeState } from "./helpers/fake.js";
 
 let fake: FakeState;
@@ -266,6 +266,80 @@ describe("cancelling", () => {
     ac.abort();
     const { statuses } = await run([backup, retainA], {}, { signal: ac.signal });
     expect(statuses).toEqual(["skipped", "skipped"]);
+    expect(fake.calls()).toEqual([]);
+  });
+});
+
+describe("repo mutexes", () => {
+  const lockWith = (locks: RepoLocks, wait: boolean): RunOptions["lock"] => (repos, w) =>
+    locks.acquire(repos, { runId: 1, cascade: "c" }, { wait, signal: w.signal, onWait: w.onWait });
+
+  it("holds the repos of each step while it runs and releases them after, also on failure", async () => {
+    fake.writeRepo("/r/a", "pw-a");
+    const locks = new RepoLocks();
+    const held: string[] = [];
+    const { statuses } = await run([copyAB, checkA], { FAKE_RESTIC_EXIT_CHECK: "1" }, {
+      lock: async (repos, w) => {
+        const r = await lockWith(locks, false)!(repos, w);
+        held.push(repos.join(","));
+        return r;
+      },
+    });
+    expect(statuses).toEqual(["success", "failed"]);
+    expect(held).toEqual(["a,b", "a"]);
+    expect(locks.holder("a")).toBeUndefined();
+    expect(locks.holder("b")).toBeUndefined();
+  });
+
+  it("does not lock steps without repos", async () => {
+    const requests: string[][] = [];
+    const runNoLock: Step = { type: "run", shell: true, command: "true", env: {}, timeoutMs: 10_000, lock: [] };
+    await run([runNoLock], {}, {
+      lock: async (repos) => {
+        requests.push(repos);
+        return { ok: true, release: () => {} };
+      },
+    });
+    expect(requests).toEqual([]);
+  });
+
+  it("skips the run from the step that finds its repo busy", async () => {
+    const locks = new RepoLocks();
+    await locks.acquire(["b"], { runId: 7, cascade: "maintenance" }, { wait: false });
+    const { result, events } = await run([backup, copyAB, retainA], {}, { lock: lockWith(locks, false) });
+    expect(result.status).toBe("skipped");
+    expect(result.steps.map((s) => s.status)).toEqual(["success", "skipped", "skipped"]);
+    expect(result.steps[1]?.reason).toBe('repo "b" is busy: held by run 7 (cascade "maintenance")');
+    expect(result.steps[2]?.reason).toBeUndefined();
+    expect(result.reason).toBe('copy a -> b: repo "b" is busy: held by run 7 (cascade "maintenance")');
+    expect(events.filter((e) => e.kind === "step-start")).toHaveLength(1);
+    expect(fake.calls().some((c) => c.cmd === "copy")).toBe(false);
+  });
+
+  it("waits for a busy repo and reports the wait", async () => {
+    fake.writeRepo("/r/a", "pw-a");
+    const locks = new RepoLocks();
+    const held = await locks.acquire(["a"], { runId: 7, cascade: "other" }, { wait: false });
+    setTimeout(() => held.ok && held.release(), 100);
+    const { result, events } = await run([checkA], {}, { lock: lockWith(locks, true) });
+    expect(result.status).toBe("success");
+    expect(events.map((e) => e.kind).slice(0, 2)).toEqual(["step-wait", "step-start"]);
+    expect(events[0]).toMatchObject({ reason: 'repo "a" is busy: held by run 7 (cascade "other")' });
+  });
+
+  it("is cancelled while waiting for a repo", async () => {
+    const locks = new RepoLocks();
+    await locks.acquire(["a"], { runId: 7, cascade: "other" }, { wait: false });
+    const ac = new AbortController();
+    const { result } = await run([checkA, retainA], {}, {
+      signal: ac.signal,
+      lock: lockWith(locks, true),
+      onEvent: (e) => {
+        if (e.kind === "step-wait") ac.abort();
+      },
+    });
+    expect(result.status).toBe("cancelled");
+    expect(result.steps.map((s) => s.status)).toEqual(["cancelled", "skipped"]);
     expect(fake.calls()).toEqual([]);
   });
 });

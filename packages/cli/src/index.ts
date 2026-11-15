@@ -91,7 +91,8 @@ async function validate(argv: string[]): Promise<number> {
   return 1;
 }
 
-const RUN_EXIT: Record<RunStatus, number> = { success: 0, warning: 3, failed: 1, cancelled: 130 };
+// skipped (repos busy) only happens under the daemon, which shares repo mutexes between runs
+const RUN_EXIT: Record<RunStatus, number> = { success: 0, warning: 3, failed: 1, cancelled: 130, skipped: 75 };
 
 async function run(argv: string[]): Promise<number> {
   let parsed;

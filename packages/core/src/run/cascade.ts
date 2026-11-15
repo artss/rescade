@@ -12,9 +12,11 @@ import {
   pruneArgs,
   type ResticContext,
 } from "../restic/restic.js";
+import type { LockResult } from "./locks.js";
 
 export type StepStatus = "success" | "warning" | "failed" | "cancelled" | "skipped";
-export type RunStatus = "success" | "warning" | "failed" | "cancelled";
+/** `skipped`: a step found its repos busy (`on-busy: skip`, or `wait` ran out of time). */
+export type RunStatus = "success" | "warning" | "failed" | "cancelled" | "skipped";
 
 export interface StepResult {
   index: number;
@@ -39,12 +41,15 @@ export interface RunResult {
   startedAt: number;
   finishedAt: number;
   steps: StepResult[];
+  /** Why the run did not succeed: the reason of the step that stopped it. */
+  reason?: string;
 }
 
 /** "info" lines come from rescade itself, the others from the step's process. */
 export type LogStream = "stdout" | "stderr" | "info";
 
 export type RunEvent =
+  | { kind: "step-wait"; index: number; label: string; reason: string }
   | { kind: "step-start"; index: number; label: string }
   | { kind: "log"; index: number; stream: LogStream; line: string }
   | { kind: "step-end"; result: StepResult };
@@ -60,6 +65,23 @@ export interface RunOptions {
   /** Limit for checking that a repo exists and is reachable (`restic cat config`). */
   repoCheckTimeoutMs?: number;
   onEvent?: (event: RunEvent) => void;
+  /**
+   * Takes the mutexes of the repos a step touches and applies `on-busy`.
+   * Without it steps run unguarded (`run --local`).
+   */
+  lock?: (repos: string[], wait: { signal?: AbortSignal; onWait: (reason: string) => void }) => Promise<LockResult>;
+}
+
+/** Repos whose mutex a step holds while it runs. */
+export function stepRepos(step: Step): string[] {
+  switch (step.type) {
+    case "copy":
+      return [step.from, step.to];
+    case "run":
+      return step.lock;
+    default:
+      return [step.repo];
+  }
 }
 
 /** A short human description of a step, e.g. "copy system-local -> system-i1". */
@@ -96,6 +118,7 @@ export async function runCascade(config: Config, cascadeName: string, options: R
   const startedAt = Date.now();
   const results: StepResult[] = [];
   let stopped = false;
+  let reason: string | undefined;
 
   for (const [index, step] of cascade.steps.entries()) {
     const label = describeStep(step);
@@ -106,6 +129,24 @@ export async function runCascade(config: Config, cascadeName: string, options: R
       continue;
     }
 
+    let release = () => {};
+    const repos = stepRepos(step);
+    if (options.lock && repos.length > 0) {
+      const lock = await options.lock(repos, {
+        signal: options.signal,
+        onWait: (why) => emit({ kind: "step-wait", index, label, reason: why }),
+      });
+      if (!lock.ok) {
+        const result: StepResult = { index, type: step.type, label, status: lock.status, reason: lock.reason };
+        results.push(result);
+        emit({ kind: "step-end", result });
+        stopped = true;
+        reason = `${label}: ${lock.reason}`;
+        continue;
+      }
+      release = lock.release;
+    }
+
     emit({ kind: "step-start", index, label });
     const log = (stream: LogStream, line: string) => emit({ kind: "log", index, stream, line });
     const stepStart = Date.now();
@@ -114,6 +155,8 @@ export async function runCascade(config: Config, cascadeName: string, options: R
       outcome = await runStep(step, config, ctx, options, log);
     } catch (e) {
       outcome = { status: "failed", reason: e instanceof Error ? e.message : String(e) };
+    } finally {
+      release();
     }
     const result: StepResult = {
       index,
@@ -125,16 +168,28 @@ export async function runCascade(config: Config, cascadeName: string, options: R
     };
     results.push(result);
     emit({ kind: "step-end", result });
-    if (outcome.status === "failed" || outcome.status === "cancelled") stopped = true;
+    if (outcome.status === "failed" || outcome.status === "cancelled") {
+      stopped = true;
+      reason = `${label}: ${outcome.reason ?? outcome.status}`;
+    }
   }
 
-  return { cascade: cascadeName, status: overall(results), startedAt, finishedAt: Date.now(), steps: results };
+  return {
+    cascade: cascadeName,
+    status: overall(results),
+    startedAt,
+    finishedAt: Date.now(),
+    steps: results,
+    ...(reason === undefined ? {} : { reason }),
+  };
 }
 
 function overall(steps: StepResult[]): RunStatus {
   const has = (s: StepStatus) => steps.some((r) => r.status === s);
   if (has("cancelled")) return "cancelled";
   if (has("failed")) return "failed";
+  // steps skipped after a failure have no reason; one with a reason found its repos busy
+  if (steps.some((r) => r.status === "skipped" && r.reason !== undefined)) return "skipped";
   if (has("warning")) return "warning";
   return "success";
 }
