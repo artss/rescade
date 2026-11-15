@@ -62,10 +62,12 @@ export const API_PREFIX = "/api";
 /** Served without the token (they hold no secrets; a browser cannot send it), but behind the Host check. */
 export const OPENAPI_PATH = `${API_PREFIX}/openapi.json`;
 export const DOCS_PATH = `${API_PREFIX}/docs`;
+/** For container health checks: tells nothing but that the daemon answers. */
+export const HEALTH_PATH = `${API_PREFIX}/health`;
 
 const isApi = (p: string): boolean => p === API_PREFIX || p.startsWith(`${API_PREFIX}/`);
 const needsToken = (p: string): boolean =>
-  isApi(p) && p !== OPENAPI_PATH && p !== DOCS_PATH && !p.startsWith(`${DOCS_PATH}/`);
+  isApi(p) && p !== OPENAPI_PATH && p !== HEALTH_PATH && p !== DOCS_PATH && !p.startsWith(`${DOCS_PATH}/`);
 
 /**
  * The HTTP API and the web UI. Every request needs the Host check; API requests also need the bearer token,
@@ -154,6 +156,26 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   });
 
   app.get(OPENAPI_PATH, { schema: { hide: true } }, async () => app.swagger());
+
+  app.get(
+    HEALTH_PATH,
+    {
+      schema: {
+        summary: "Whether the daemon answers; needs no token",
+        security: [],
+        response: {
+          200: {
+            description: "The daemon is up",
+            type: "object",
+            properties: { ok: { const: true } },
+            required: ["ok"],
+          },
+          403: { description: errorText[403], ...ref("Error") },
+        },
+      },
+    },
+    async () => ({ ok: true }),
+  );
 
   app.get(
     `${API_PREFIX}/status`,

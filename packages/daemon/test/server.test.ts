@@ -6,7 +6,7 @@ import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { loadConfig, type Config, type LogRecord, type RunRecord, type StepRecord } from "@rescade/core";
 import { RepoStates } from "../src/repos.js";
-import { buildServer, DOCS_PATH, OPENAPI_PATH, type DaemonStatus, type ServerDeps } from "../src/server.js";
+import { buildServer, DOCS_PATH, HEALTH_PATH, OPENAPI_PATH, type DaemonStatus, type ServerDeps } from "../src/server.js";
 
 const TOKEN = "test-token-0123456789";
 const HOST = "localhost:8765";
@@ -214,6 +214,14 @@ describe("OpenAPI document", () => {
     expect((await call("GET", "/api/runs", { authorization: "" })).status).toBe(401);
   });
 
+  it("answers the health check without the token but behind the Host check", async () => {
+    const res = await call("GET", HEALTH_PATH, { authorization: "" });
+    expect(res).toEqual({ status: 200, body: { ok: true } });
+    expect((await call("GET", HEALTH_PATH, { authorization: "", host: "evil.example" })).status).toBe(403);
+    const spec = (await call("GET", OPENAPI_PATH)).body;
+    expect(spec.paths[HEALTH_PATH].get.security).toEqual([]);
+  });
+
   it("shows Swagger UI without the token but behind the Host check", async () => {
     const get = (url: string, host = HOST) => app.inject({ method: "GET", url, headers: { host } });
     const page = await get(`${DOCS_PATH}/`);
@@ -234,6 +242,7 @@ describe("OpenAPI document", () => {
     expect(operations.map((o) => o.op).sort()).toEqual([
       "GET /api/cascades",
       "GET /api/events",
+      "GET /api/health",
       "GET /api/repos",
       "GET /api/runs",
       "GET /api/runs/{id}",
@@ -242,9 +251,9 @@ describe("OpenAPI document", () => {
       "POST /api/cascades/{name}/run",
       "POST /api/runs/{id}/cancel",
     ]);
-    for (const { codes } of operations) {
+    for (const { op, codes } of operations) {
       expect(codes.some((c) => c.startsWith("2"))).toBe(true);
-      expect(codes).toEqual(expect.arrayContaining(["401", "403"]));
+      expect(codes).toEqual(expect.arrayContaining(op === `GET ${HEALTH_PATH}` ? ["403"] : ["401", "403"]));
     }
     expect(spec.paths["/api/runs/{id}"].get.responses["200"].content["application/json"].schema).toEqual({
       $ref: "#/components/schemas/RunWithSteps",
