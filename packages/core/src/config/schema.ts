@@ -13,6 +13,17 @@ export function parseDuration(text: string): number {
   return Number(match[1]) * UNIT_MS[match[2]!]!;
 }
 
+/** Milliseconds -> "250ms", "45s", "10m", "1m30s", "2h", "2h15m". */
+export function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return s % 60 === 0 ? `${m}m` : `${m}m${s % 60}s`;
+  const h = Math.floor(m / 60);
+  return m % 60 === 0 ? `${h}h` : `${h}h${m % 60}m`;
+}
+
 export const duration = z
   .string()
   .regex(DURATION_RE, 'expected a duration such as "30s", "10m" or "2h"');

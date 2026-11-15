@@ -48,7 +48,15 @@
 - Отмена: SIGTERM дочернему restic, таймаут (~30 с), потом SIGKILL. При остановке демона: прекратить планирование,
   переслать SIGTERM детям, пометить активные запуски `interrupted`. Stale-lock'и не снимаем автоматически, показываем в статусе.
 - restic запускается через `spawn` без shell; секреты через env процесса, не через аргументы; разбор `--json`.
-- Для `run`-шагов в дочерний процесс передаётся только заданное в шаге окружение, не всё окружение демона.
+- Для `run`-шагов в дочерний процесс передаётся только заданное в шаге окружение, не всё окружение демона
+  (без `PATH` программа ищется в системном пути по умолчанию). `shell: true` = `/bin/sh -c`.
+- restic получает окружение демона без `RESTIC_REPOSITORY*`/`RESTIC_PASSWORD*` (и `FROM_`-вариантов), поверх него `env`
+  репо (для `copy` сначала источника, потом цели); `options` репо идут как `-o key=value`. Источник для `copy` и
+  `init --copy-chunker-params` передаётся через `RESTIC_FROM_REPOSITORY`/`RESTIC_FROM_PASSWORD`.
+- Требуется restic >= 0.17 (коды выхода 10 и 12). Любой другой ненулевой код `cat config` = `unreachable`.
+- `cat config` ограничен таймаутом (`RESCADE_REPO_CHECK_TIMEOUT`, по умолчанию 2m): недоступный REST/S3 restic
+  ретраит минутами. Истёк = `unreachable`, init не делается. У backup/prune/copy/check таймаута нет.
+- Коды выхода `rescade run --local`: 0 success, 3 warning, 1 failed, 130 cancelled, 2 ошибка использования.
 
 ## Инициализация репозиториев и сверка параметров
 
@@ -67,7 +75,8 @@
 - TCP (не Unix-сокет), по умолчанию `127.0.0.1:8765`. Токен обязателен всегда (`Authorization: Bearer`, сравнение за постоянное время).
   Токен через env или файл (права 600), не через аргументы. Проверка заголовка `Host`, CORS только для явно разрешённых origin.
 - Настройки сервиса через env/флаги, не YAML: `RESCADE_ADDR`, `RESCADE_URL`, `RESCADE_TOKEN_FILE`, `RESCADE_TOKEN`,
-  `RESCADE_CONFIG_DIR`, `RESCADE_DATA_DIR`, срок хранения истории, путь к restic.
+  `RESCADE_CONFIG_DIR`, `RESCADE_DATA_DIR`, срок хранения истории, путь к restic (`RESCADE_RESTIC`),
+  таймаут проверки репо (`RESCADE_REPO_CHECK_TIMEOUT`).
 - Клиент ищет токен: `--token-file`, `RESCADE_TOKEN`, `RESCADE_TOKEN_FILE`, `~/.config/rescade/token`. Сервер: `/etc/rescade/token`.
   Предупреждение, если права на файл слишком широкие.
 - Эндпоинты: `GET /chains`, `GET /runs`, `GET /runs/:id`, `GET /runs/:id/log?step=`, `POST /chains/:name/run`,
@@ -85,7 +94,7 @@
 ## Порядок работ
 
 1. ~~Загрузчик конфигов и `validate`~~ (сделано)
-2. Адаптер restic и исполнитель одной цепочки, `run --local`, фейковый restic для тестов
+2. ~~Адаптер restic и исполнитель одной цепочки, `run --local`, фейковый restic для тестов~~ (сделано)
 3. Мьютексы, `on-busy`, планировщик, хранилище SQLite
 4. Демон, API, CLI-клиент
 5. Отмена и сигналы, восстановление `interrupted`, ротация логов
