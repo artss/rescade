@@ -1,4 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
+import path from "node:path";
+import fastifyStatic from "@fastify/static";
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import Fastify, { LogController, type FastifyBaseLogger, type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
@@ -6,9 +8,21 @@ import { describeStep, type Config, type Runner, type RunnerEvent, type Schedule
 import type { RepoStates } from "./repos.js";
 import { arrayOf, ref, schemas } from "./schemas.js";
 
+/** What `GET /status` shows about the daemon itself. */
+export interface DaemonStatus {
+  version: string;
+  startedAt: number;
+  config: {
+    path: string;
+    loadedAt: number;
+    lastReload?: { at: number; ok: boolean; errors: string[] };
+  };
+}
+
 export interface ServerDeps {
   /** The current config; it changes on reload. */
   config: () => Config;
+  status: () => DaemonStatus;
   runner: Runner;
   scheduler: Scheduler;
   store: Store;
@@ -20,6 +34,8 @@ export interface ServerDeps {
   logger: FastifyBaseLogger;
   /** Interval of SSE keep-alive comments. */
   heartbeatMs?: number;
+  /** The built web UI; without it only the API is served. */
+  webDir?: string;
 }
 
 const id = { type: "integer", minimum: 1 } as const;
@@ -41,16 +57,19 @@ function responses(code: number, description: string, schema: object, ...errors:
   return r;
 }
 
+/** The API lives under this prefix; other paths are the web UI, routed in the browser. */
+export const API_PREFIX = "/api";
 /** Served without the token (they hold no secrets; a browser cannot send it), but behind the Host check. */
-export const OPENAPI_PATH = "/openapi.json";
-export const DOCS_PATH = "/docs";
+export const OPENAPI_PATH = `${API_PREFIX}/openapi.json`;
+export const DOCS_PATH = `${API_PREFIX}/docs`;
 
-const isPublic = (route: string | undefined): boolean =>
-  route === OPENAPI_PATH || route === DOCS_PATH || route?.startsWith(`${DOCS_PATH}/`) === true;
+const isApi = (p: string): boolean => p === API_PREFIX || p.startsWith(`${API_PREFIX}/`);
+const needsToken = (p: string): boolean =>
+  isApi(p) && p !== OPENAPI_PATH && p !== DOCS_PATH && !p.startsWith(`${DOCS_PATH}/`);
 
 /**
- * The HTTP API. Every request needs the Host check and the bearer token, except CORS preflight
- * and the OpenAPI document with Swagger UI.
+ * The HTTP API and the web UI. Every request needs the Host check; API requests also need the bearer token,
+ * except CORS preflight and the OpenAPI document with Swagger UI.
  */
 export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   const app = Fastify({
@@ -97,7 +116,9 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
           .send();
       }
     }
-    if (isPublic(request.routeOptions.url)) return;
+    // the matched route cannot be dressed up like a raw path; the path covers /api/... caught by the UI's wildcard
+    const route = request.routeOptions.url;
+    if (!(route !== undefined && needsToken(route)) && !needsToken(request.url.split("?")[0]!)) return;
 
     const auth = request.headers.authorization ?? "";
     const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
@@ -111,12 +132,42 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     if (code >= 500) request.log.error({ err: error, url: request.url }, "request failed");
     return reply.code(code).send({ error: error.message });
   });
-  app.setNotFoundHandler((request, reply) => reply.code(404).send({ error: `no route ${request.method} ${request.url}` }));
+  if (deps.webDir !== undefined) {
+    await app.register(fastifyStatic, {
+      root: deps.webDir,
+      cacheControl: false,
+      // file names under assets/ carry a content hash
+      setHeaders: (reply, file) =>
+        reply.header(
+          "cache-control",
+          path.relative(deps.webDir!, file).startsWith(`assets${path.sep}`) ? "public, max-age=31536000, immutable" : "no-cache",
+        ),
+    });
+  }
+  app.setNotFoundHandler((request, reply) => {
+    const p = request.url.split("?")[0]!;
+    // a page of the UI, not a missing file
+    if (deps.webDir !== undefined && request.method === "GET" && !isApi(p) && !path.posix.basename(p).includes(".")) {
+      return reply.sendFile("index.html");
+    }
+    return reply.code(404).send({ error: `no route ${request.method} ${request.url}` });
+  });
 
   app.get(OPENAPI_PATH, { schema: { hide: true } }, async () => app.swagger());
 
   app.get(
-    "/cascades",
+    `${API_PREFIX}/status`,
+    {
+      schema: {
+        summary: "The daemon: version, uptime, the config in use and the outcome of the latest reload",
+        response: responses(200, "Daemon status", ref("Status")),
+      },
+    },
+    async () => deps.status(),
+  );
+
+  app.get(
+    `${API_PREFIX}/cascades`,
     {
       schema: {
         summary: "Cascades of the current config with their next, active and last runs",
@@ -142,7 +193,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   );
 
   app.post<{ Params: { name: string } }>(
-    "/cascades/:name/run",
+    `${API_PREFIX}/cascades/:name/run`,
     {
       schema: {
         summary: "Start a cascade",
@@ -163,7 +214,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   );
 
   app.get<{ Querystring: { cascade?: string; limit?: number; before?: number } }>(
-    "/runs",
+    `${API_PREFIX}/runs`,
     {
       schema: {
         summary: "Runs, newest first",
@@ -186,7 +237,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   );
 
   app.get<{ Params: { id: number } }>(
-    "/runs/:id",
+    `${API_PREFIX}/runs/:id`,
     {
       schema: {
         summary: "A run with its steps",
@@ -200,15 +251,21 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     },
   );
 
-  app.get<{ Params: { id: number }; Querystring: { step?: number } }>(
-    "/runs/:id/log",
+  app.get<{ Params: { id: number }; Querystring: { step?: number; after?: number } }>(
+    `${API_PREFIX}/runs/:id/log`,
     {
       schema: {
         summary: "Log lines of a run, of one step with `step`",
+        description:
+          "To follow a run without losing or repeating lines, subscribe to `/api/events?run=` first, then ask for the log " +
+          "and drop `log` events with an id not greater than the last line received. `after` catches up after a reconnect.",
         params: idParams,
         querystring: {
           type: "object",
-          properties: { step: { type: "integer", minimum: 0, description: "Step index" } },
+          properties: {
+            step: { type: "integer", minimum: 0, description: "Step index" },
+            after: { type: "integer", minimum: 0, description: "Only lines with a greater id" },
+          },
           additionalProperties: false,
         },
         response: responses(200, "Log lines in order", arrayOf("LogLine"), 400, 404),
@@ -216,12 +273,13 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     },
     async (request, reply) => {
       if (!deps.store.run(request.params.id)) return reply.code(404).send({ error: `no run ${request.params.id}` });
-      return deps.store.log(request.params.id, request.query.step);
+      const { step, after } = request.query;
+      return deps.store.log(request.params.id, { step, after });
     },
   );
 
   app.post<{ Params: { id: number } }>(
-    "/runs/:id/cancel",
+    `${API_PREFIX}/runs/:id/cancel`,
     {
       schema: {
         summary: "Cancel a queued or running run",
@@ -249,7 +307,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   );
 
   app.get(
-    "/repos",
+    `${API_PREFIX}/repos`,
     {
       schema: {
         summary: "Last known state of each repo",
@@ -260,7 +318,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   );
 
   app.get<{ Querystring: { run?: number; cascade?: string } }>(
-    "/events",
+    `${API_PREFIX}/events`,
     {
       schema: {
         summary: "Server-sent events",

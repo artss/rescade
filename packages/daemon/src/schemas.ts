@@ -67,6 +67,7 @@ const LogLine = {
   $id: "LogLine",
   type: "object",
   properties: {
+    id: { type: "integer", description: "Grows with every line; `after` in the log request continues from it" },
     step: { type: "integer" },
     ts: epochMs,
     stream: {
@@ -76,7 +77,7 @@ const LogLine = {
     },
     line: { type: "string" },
   },
-  required: ["step", "ts", "stream", "line"],
+  required: ["id", "step", "ts", "stream", "line"],
 } as const;
 
 const Cascade = {
@@ -194,6 +195,34 @@ const RepoCheck = {
   ],
 } as const;
 
+const Status = {
+  $id: "Status",
+  type: "object",
+  properties: {
+    version: { type: "string" },
+    startedAt: { ...epochMs, description: "When the daemon started" },
+    config: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "The config directory or file" },
+        loadedAt: { ...epochMs, description: "When the config in use was loaded" },
+        lastReload: {
+          type: "object",
+          description: "The latest reload (SIGHUP); absent until there was one",
+          properties: {
+            at: epochMs,
+            ok: { type: "boolean", description: "false: the new config had errors and the old one stays" },
+            errors: { type: "array", items: { type: "string" }, description: "file:line:col: message" },
+          },
+          required: ["at", "ok", "errors"],
+        },
+      },
+      required: ["path", "loadedAt"],
+    },
+  },
+  required: ["version", "startedAt", "config"],
+} as const;
+
 const RunEvent = {
   $id: "RunEvent",
   type: "object",
@@ -240,6 +269,7 @@ export const schemas = [
   RepoLockList,
   Repo,
   RepoCheck,
+  Status,
   RunEvent,
   StepEvent,
   LogEvent,

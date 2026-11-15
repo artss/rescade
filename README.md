@@ -33,14 +33,16 @@ Settings come from flags or the environment, never from the YAML: `--addr` / `RE
 `RESCADE_LOG_LEVEL`, `RESCADE_REPO_CHECK_TIMEOUT` (default `2m`), `RESCADE_ALLOWED_HOSTS` (Host header
 values to accept when listening on a public address), `RESCADE_CORS_ORIGINS`. See `rescaded --help`.
 
-The API needs `Authorization: Bearer <token>` on every request:
-`GET /cascades`, `GET /runs?cascade=&limit=&before=`, `GET /runs/:id`, `GET /runs/:id/log?step=`,
-`POST /cascades/:name/run`, `POST /runs/:id/cancel`, `GET /repos`, `GET /events?run=|cascade=` (server-sent events).
+The API lives under `/api` and needs `Authorization: Bearer <token>` on every request:
+`GET /api/status`, `GET /api/cascades`, `GET /api/runs?cascade=&limit=&before=`, `GET /api/runs/:id`,
+`GET /api/runs/:id/log?step=&after=`, `POST /api/cascades/:name/run`, `POST /api/runs/:id/cancel`,
+`GET /api/repos`, `GET /api/events?run=|cascade=` (server-sent events). The OpenAPI document is at
+`/api/openapi.json` and Swagger UI at `/api/docs`, both without the token.
 
 ## The client
 
     rescade run <cascade> [--detach]    # start and follow; Ctrl+C cancels the run
-    rescade status                      # cascades with their last and next runs
+    rescade status                      # the daemon, its config, cascades with their last and next runs
     rescade runs [--cascade <name>] [--limit <n>]
     rescade show <run>
     rescade log <run> [--step <n>]

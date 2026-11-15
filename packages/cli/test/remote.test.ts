@@ -113,6 +113,8 @@ describe("the CLI through the daemon", () => {
     }
 
     const status = await cli(["status"]);
+    expect(status.stdout).toMatch(/^rescaded \d+\.\d+\.\d+, up since \d{4}-\d\d-\d\d \d\d:\d\d:\d\d\nconfig .+, loaded /);
+    expect(status.stdout).not.toContain("failed");
     expect(status.stdout).toMatch(new RegExp(`^daily +success .* \\(run ${id}\\) +\\d{4}-\\d\\d-\\d\\d 03:00:00 +-$`, "m"));
     expect(status.stdout).toMatch(/^slow +- +manual +-$/m);
 
@@ -122,6 +124,14 @@ describe("the CLI through the daemon", () => {
 
     const log = await cli(["log", String(id), "--step", "1"]);
     expect(log.stdout).toContain("    Applying Policy: keep 7 daily snapshots");
+  });
+
+  it("tells when a config reload failed", async () => {
+    await writeFile(path.join(fake.dir, "rescade.yaml"), "cascades: [");
+    expect(await daemon!.reload()).toBe(false);
+    const status = await cli(["status"]);
+    expect(status.stdout).toMatch(/^reload at .* failed, the config loaded before stays in use:\n  .*rescade\.yaml:1:\d+: error: /m);
+    expect(status.stdout).toMatch(/^daily /m);
   });
 
   it("reports a busy cascade as skipped and cancels a run", async () => {

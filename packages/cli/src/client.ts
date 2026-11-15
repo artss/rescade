@@ -65,7 +65,7 @@ export class ApiClient {
 
   private async fetch(method: string, pathAndQuery: string, signal?: AbortSignal): Promise<Response> {
     try {
-      return await fetch(`${this.conn.url}${pathAndQuery}`, {
+      return await fetch(`${this.conn.url}/api${pathAndQuery}`, {
         method,
         headers: { authorization: `Bearer ${this.conn.token}` },
         signal,

@@ -47,7 +47,7 @@ JSON сервисного аккаунта, сертификаты) указыв
 
 Логин и пароль HTTP basic: в URL (`rest:https://backup:${REST_PASSWORD}@host:8000/repo/`) или через
 `RESTIC_REST_USERNAME` / `RESTIC_REST_PASSWORD` в `env`. Лучше в URL: так они свои у каждого репо (см. «copy»
-ниже). В `GET /repos` пароль из URL заменяется на `***`.
+ниже). В `GET /api/repos` пароль из URL заменяется на `***`.
 
 TLS: `RESTIC_CACERT` (свой CA или самоподписанный сертификат, системные CA тогда не используются),
 `RESTIC_TLS_CLIENT_CERT` (клиентский сертификат и ключ в одном PEM).

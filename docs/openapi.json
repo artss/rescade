@@ -206,6 +206,10 @@
       "LogLine": {
         "type": "object",
         "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Grows with every line; `after` in the log request continues from it"
+          },
           "step": {
             "type": "integer"
           },
@@ -227,6 +231,7 @@
           }
         },
         "required": [
+          "id",
           "step",
           "ts",
           "stream",
@@ -537,6 +542,66 @@
           }
         ]
       },
+      "Status": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "integer",
+            "description": "When the daemon started"
+          },
+          "config": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "The config directory or file"
+              },
+              "loadedAt": {
+                "type": "integer",
+                "description": "When the config in use was loaded"
+              },
+              "lastReload": {
+                "type": "object",
+                "description": "The latest reload (SIGHUP); absent until there was one",
+                "properties": {
+                  "at": {
+                    "type": "integer",
+                    "description": "Epoch milliseconds"
+                  },
+                  "ok": {
+                    "type": "boolean",
+                    "description": "false: the new config had errors and the old one stays"
+                  },
+                  "errors": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "file:line:col: message"
+                  }
+                },
+                "required": [
+                  "at",
+                  "ok",
+                  "errors"
+                ]
+              }
+            },
+            "required": [
+              "path",
+              "loadedAt"
+            ]
+          }
+        },
+        "required": [
+          "version",
+          "startedAt",
+          "config"
+        ]
+      },
       "RunEvent": {
         "type": "object",
         "properties": {
@@ -638,7 +703,44 @@
     }
   },
   "paths": {
-    "/cascades": {
+    "/api/status": {
+      "get": {
+        "summary": "The daemon: version, uptime, the config in use and the outcome of the latest reload",
+        "responses": {
+          "200": {
+            "description": "Daemon status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Host not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cascades": {
       "get": {
         "summary": "Cascades of the current config with their next, active and last runs",
         "responses": {
@@ -679,7 +781,7 @@
         }
       }
     },
-    "/cascades/{name}/run": {
+    "/api/cascades/{name}/run": {
       "post": {
         "summary": "Start a cascade",
         "description": "The run is `skipped` with a reason when the cascade is already running or `on-busy: skip` finds its repos busy.",
@@ -747,7 +849,7 @@
         }
       }
     },
-    "/runs": {
+    "/api/runs": {
       "get": {
         "summary": "Runs, newest first",
         "parameters": [
@@ -829,7 +931,7 @@
         }
       }
     },
-    "/runs/{id}": {
+    "/api/runs/{id}": {
       "get": {
         "summary": "A run with its steps",
         "parameters": [
@@ -897,9 +999,10 @@
         }
       }
     },
-    "/runs/{id}/log": {
+    "/api/runs/{id}/log": {
       "get": {
         "summary": "Log lines of a run, of one step with `step`",
+        "description": "To follow a run without losing or repeating lines, subscribe to `/api/events?run=` first, then ask for the log and drop `log` events with an id not greater than the last line received. `after` catches up after a reconnect.",
         "parameters": [
           {
             "schema": {
@@ -910,6 +1013,16 @@
             "name": "step",
             "required": false,
             "description": "Step index"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "description": "Only lines with a greater id"
           },
           {
             "schema": {
@@ -979,7 +1092,7 @@
         }
       }
     },
-    "/runs/{id}/cancel": {
+    "/api/runs/{id}/cancel": {
       "post": {
         "summary": "Cancel a queued or running run",
         "parameters": [
@@ -1068,7 +1181,7 @@
         }
       }
     },
-    "/repos": {
+    "/api/repos": {
       "get": {
         "summary": "Last known state of each repo",
         "responses": {
@@ -1109,7 +1222,7 @@
         }
       }
     },
-    "/events": {
+    "/api/events": {
       "get": {
         "summary": "Server-sent events",
         "description": "Every event is `event: <kind>` (`run`, `step`, `log`, `repo`) with the JSON in `data:`. With `run` or `cascade` only events of those runs come, without `repo`. Comments keep the connection alive.",
