@@ -18,11 +18,12 @@
 Прогрев репо при старте (`src/restic/warmup.ts`), чтение токена (`src/token.ts`).
 `packages/daemon`: `rescaded` (`settings.ts` флаги/env/токен/Host, `server.ts` Fastify-маршруты и SSE, `daemon.ts` запуск,
 SIGHUP, остановка с `interrupted`, чистка истории раз в час, `repos.ts` состояние репо в памяти, `schemas.ts` схемы
-ответов для сериализации и `GET /openapi.json` и Swagger UI на `/docs` без токена; копия в `docs/openapi.json`). Срок хранения истории
+ответов для сериализации и `GET /api/openapi.json` и Swagger UI на `/api/docs` без токена; копия в `docs/openapi.json`;
+API под `/api`, остальные пути отдают собранный веб-интерфейс с fallback на `index.html`). Срок хранения истории
 и логов `Store.prune`, локи restic `src/restic/lockfiles.ts` (читаются в ensure перед каждым шагом). `packages/cli`: `validate`, `run --local`, а через
 демон `run [--detach]`, `status`, `runs`, `show`, `log`, `cancel`, `repos` (`client.ts` HTTP и SSE, `remote.ts` команды).
 Бэкенды restic (`src/config/backends.ts`: префикс `path`, опции по бэкенду, конфликты `env`/`options` в парах
-`copy`/`from`; описание в `docs/backends.md`). 171 тест vitest, фейковый restic в `packages/core/test/fake-restic.mjs`, 7 интеграционных с настоящим restic
+`copy`/`from`; описание в `docs/backends.md`). 178 тестов vitest, фейковый restic в `packages/core/test/fake-restic.mjs`, 7 интеграционных с настоящим restic
 (проверено на 0.19.1), пример в `examples/config`.
 
 Следующий шаг (7): веб-интерфейс.
@@ -85,5 +86,7 @@ SIGHUP, остановка с `interrupted`, чистка истории раз 
   сверяет ответы на полностью заполненных записях с тем, что вернул обработчик.
 - `@fastify/swagger` видит только маршруты, объявленные после его загрузки, поэтому `buildServer` асинхронная
   (`await app.register(swagger)` до маршрутов).
+- `@fastify/static` 10 передаёт в `setHeaders` `reply`, а не `res`. Его wildcard-маршрут ловит и неизвестные `/api/...`,
+  поэтому токен проверяется и по маршруту, и по пути. `inject` читает `//api/...` как URL с хостом `api`.
 - В режиме `--allow-missing-env` значения подменяются на `<NAME is unset>`: годится для валидации, не для запуска
   (список в `LoadResult.missingEnv`).
