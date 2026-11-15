@@ -1,0 +1,1187 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "rescade API",
+    "version": "1",
+    "description": "Runs and history of rescade cascades. Errors are `{ \"error\": \"...\" }`; times are epoch milliseconds."
+  },
+  "components": {
+    "securitySchemes": {
+      "bearer": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "Run": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "cascade": {
+            "type": "string"
+          },
+          "trigger": {
+            "type": "string",
+            "enum": [
+              "schedule",
+              "manual"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "success",
+              "warning",
+              "failed",
+              "cancelled",
+              "skipped",
+              "interrupted"
+            ],
+            "description": "`queued`: a step waits for busy repos; `interrupted`: the daemon stopped during the run"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why the run did not succeed or waits"
+          },
+          "startedAt": {
+            "type": "integer",
+            "description": "Epoch milliseconds"
+          },
+          "finishedAt": {
+            "type": "integer",
+            "description": "Epoch milliseconds"
+          }
+        },
+        "required": [
+          "id",
+          "cascade",
+          "trigger",
+          "status",
+          "startedAt"
+        ]
+      },
+      "Step": {
+        "type": "object",
+        "properties": {
+          "runId": {
+            "type": "integer"
+          },
+          "index": {
+            "type": "integer"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "backup",
+              "retain",
+              "prune",
+              "check",
+              "copy",
+              "run"
+            ]
+          },
+          "label": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "success",
+              "warning",
+              "failed",
+              "cancelled",
+              "skipped",
+              "interrupted"
+            ]
+          },
+          "exitCode": {
+            "type": "integer"
+          },
+          "startedAt": {
+            "type": "integer",
+            "description": "Epoch milliseconds"
+          },
+          "durationMs": {
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "stderrTail": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Last stderr lines of a failed process"
+          },
+          "summary": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "backup: restic's JSON summary"
+          }
+        },
+        "required": [
+          "runId",
+          "index",
+          "type",
+          "label",
+          "status"
+        ]
+      },
+      "RunWithSteps": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "cascade": {
+            "type": "string"
+          },
+          "trigger": {
+            "type": "string",
+            "enum": [
+              "schedule",
+              "manual"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "success",
+              "warning",
+              "failed",
+              "cancelled",
+              "skipped",
+              "interrupted"
+            ],
+            "description": "`queued`: a step waits for busy repos; `interrupted`: the daemon stopped during the run"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why the run did not succeed or waits"
+          },
+          "startedAt": {
+            "type": "integer",
+            "description": "Epoch milliseconds"
+          },
+          "finishedAt": {
+            "type": "integer",
+            "description": "Epoch milliseconds"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Step"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "cascade",
+          "trigger",
+          "status",
+          "startedAt",
+          "steps"
+        ]
+      },
+      "LogLine": {
+        "type": "object",
+        "properties": {
+          "step": {
+            "type": "integer"
+          },
+          "ts": {
+            "type": "integer",
+            "description": "Epoch milliseconds"
+          },
+          "stream": {
+            "type": "string",
+            "enum": [
+              "stdout",
+              "stderr",
+              "info"
+            ],
+            "description": "`info` lines come from rescade itself"
+          },
+          "line": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "step",
+          "ts",
+          "stream",
+          "line"
+        ]
+      },
+      "Cascade": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "schedule": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Cron expressions; empty: manual runs only"
+          },
+          "timezone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "onBusy": {
+            "type": "string",
+            "enum": [
+              "skip",
+              "wait"
+            ]
+          },
+          "waitTimeoutMs": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "backup",
+                    "retain",
+                    "prune",
+                    "check",
+                    "copy",
+                    "run"
+                  ]
+                },
+                "label": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "label"
+              ]
+            }
+          },
+          "nextRun": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Epoch milliseconds of the next scheduled run"
+          },
+          "active": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Run"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastRun": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Run"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "schedule",
+          "timezone",
+          "onBusy",
+          "waitTimeoutMs",
+          "steps",
+          "nextRun",
+          "active",
+          "lastRun"
+        ]
+      },
+      "LockOwner": {
+        "type": "object",
+        "description": "The rescade run whose step holds a repo",
+        "properties": {
+          "runId": {
+            "type": "integer"
+          },
+          "cascade": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "runId",
+          "cascade"
+        ]
+      },
+      "ResticLock": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "time": {
+            "type": "integer",
+            "description": "Epoch milliseconds; a live restic refreshes its locks every 5 minutes"
+          },
+          "exclusive": {
+            "type": "boolean"
+          },
+          "hostname": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          },
+          "pid": {
+            "type": "integer"
+          },
+          "stale": {
+            "type": "boolean",
+            "description": "Older than 30 minutes, restic's own limit"
+          }
+        },
+        "required": [
+          "id",
+          "time",
+          "exclusive",
+          "hostname",
+          "username",
+          "pid",
+          "stale"
+        ]
+      },
+      "RepoLockList": {
+        "type": "object",
+        "description": "restic lock files found at the last check",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "description": "All lock files; details are read for the first 10"
+          },
+          "locks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResticLock"
+            }
+          },
+          "error": {
+            "type": "string",
+            "description": "The locks could not be read; the repo itself answered"
+          }
+        },
+        "required": [
+          "count",
+          "locks"
+        ]
+      },
+      "Repo": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string",
+            "description": "Repo location with any password in a URL hidden"
+          },
+          "from": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "ok",
+              "unreachable",
+              "wrong-password",
+              "init-failed",
+              "error",
+              "cancelled"
+            ],
+            "description": "`unknown` until checked"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "checkedAt": {
+            "type": "integer",
+            "description": "Epoch milliseconds"
+          },
+          "id": {
+            "type": "string"
+          },
+          "chunkerPolynomial": {
+            "type": "string"
+          },
+          "locks": {
+            "$ref": "#/components/schemas/RepoLockList"
+          },
+          "lockedBy": {
+            "$ref": "#/components/schemas/LockOwner"
+          }
+        },
+        "required": [
+          "name",
+          "location",
+          "state"
+        ]
+      },
+      "RepoCheck": {
+        "description": "Outcome of a repo check (`restic cat config`, init when missing, lock files)",
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "enum": [
+                  true
+                ]
+              },
+              "config": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "chunkerPolynomial": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "chunkerPolynomial"
+                ]
+              },
+              "initialized": {
+                "type": "boolean"
+              },
+              "locks": {
+                "$ref": "#/components/schemas/RepoLockList"
+              }
+            },
+            "required": [
+              "ok",
+              "config",
+              "initialized",
+              "locks"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "enum": [
+                  false
+                ]
+              },
+              "problem": {
+                "type": "string",
+                "enum": [
+                  "unreachable",
+                  "wrong-password",
+                  "init-failed",
+                  "error",
+                  "cancelled"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "ok",
+              "problem",
+              "reason"
+            ]
+          }
+        ]
+      },
+      "RunEvent": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "enum": [
+              "run"
+            ]
+          },
+          "run": {
+            "$ref": "#/components/schemas/Run"
+          }
+        },
+        "required": [
+          "kind",
+          "run"
+        ]
+      },
+      "StepEvent": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "enum": [
+              "step"
+            ]
+          },
+          "step": {
+            "$ref": "#/components/schemas/Step"
+          }
+        },
+        "required": [
+          "kind",
+          "step"
+        ]
+      },
+      "LogEvent": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "enum": [
+              "log"
+            ]
+          },
+          "runId": {
+            "type": "integer"
+          },
+          "log": {
+            "$ref": "#/components/schemas/LogLine"
+          }
+        },
+        "required": [
+          "kind",
+          "runId",
+          "log"
+        ]
+      },
+      "RepoEvent": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "enum": [
+              "repo"
+            ]
+          },
+          "repo": {
+            "type": "string"
+          },
+          "result": {
+            "$ref": "#/components/schemas/RepoCheck"
+          },
+          "at": {
+            "type": "integer",
+            "description": "Epoch milliseconds"
+          }
+        },
+        "required": [
+          "kind",
+          "repo",
+          "result",
+          "at"
+        ]
+      },
+      "Event": {
+        "description": "Data of one server-sent event; the SSE `event:` field repeats `kind`",
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/RunEvent"
+          },
+          {
+            "$ref": "#/components/schemas/StepEvent"
+          },
+          {
+            "$ref": "#/components/schemas/LogEvent"
+          },
+          {
+            "$ref": "#/components/schemas/RepoEvent"
+          }
+        ]
+      }
+    }
+  },
+  "paths": {
+    "/cascades": {
+      "get": {
+        "summary": "Cascades of the current config with their next, active and last runs",
+        "responses": {
+          "200": {
+            "description": "Cascades in config order",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Cascades in config order",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Cascade"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Host not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cascades/{name}/run": {
+      "post": {
+        "summary": "Start a cascade",
+        "description": "The run is `skipped` with a reason when the cascade is already running or `on-busy: skip` finds its repos busy.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "name",
+            "required": true
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "The new run",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Run"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Host not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The daemon is stopping",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs": {
+      "get": {
+        "summary": "Runs, newest first",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "cascade",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "description": "Default 50"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "description": "Only runs with a smaller id, for paging"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Runs without their steps",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Runs without their steps",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Run"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Host not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{id}": {
+      "get": {
+        "summary": "A run with its steps",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The run",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunWithSteps"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Host not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{id}/log": {
+      "get": {
+        "summary": "Log lines of a run, of one step with `step`",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "in": "query",
+            "name": "step",
+            "required": false,
+            "description": "Step index"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Log lines in order",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Log lines in order",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LogLine"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Host not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{id}/cancel": {
+      "post": {
+        "summary": "Cancel a queued or running run",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Cancelling; the run ends as `cancelled`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Cancelling; the run ends as `cancelled`",
+                  "type": "object",
+                  "properties": {
+                    "cancelling": {
+                      "enum": [
+                        true
+                      ]
+                    }
+                  },
+                  "required": [
+                    "cancelling"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Host not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The run is not in progress",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/repos": {
+      "get": {
+        "summary": "Last known state of each repo",
+        "responses": {
+          "200": {
+            "description": "Repos in config order",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Repos in config order",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Repo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Host not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/events": {
+      "get": {
+        "summary": "Server-sent events",
+        "description": "Every event is `event: <kind>` (`run`, `step`, `log`, `repo`) with the JSON in `data:`. With `run` or `cascade` only events of those runs come, without `repo`. Comments keep the connection alive.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "in": "query",
+            "name": "run",
+            "required": false,
+            "description": "Events of this run"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "cascade",
+            "required": false,
+            "description": "Events of this cascade's runs"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The event stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/Event"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Host not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    }
+  ]
+}

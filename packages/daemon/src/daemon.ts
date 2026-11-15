@@ -111,7 +111,7 @@ export async function startDaemon(settings: Settings, logger: Logger, options: D
     scheduler.update(config.cascades);
 
     const hosts = new Set<string>();
-    const app = buildServer({
+    const app = await buildServer({
       config: () => config!,
       runner,
       scheduler,
