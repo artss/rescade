@@ -1,8 +1,8 @@
 # rescade
 
-Cascades of restic commands on a schedule, described in YAML. Done so far: the config loader,
-`rescade validate`, the executor with `rescade run --local`, and the core of the future daemon
-(repo mutexes, `on-busy`, scheduler, run history in SQLite). The daemon, its API and the CLI client come next.
+Cascades of restic commands on a schedule, described in YAML. The daemon `rescaded` runs them by
+schedule, keeps the history in SQLite and serves an HTTP API; the `rescade` command talks to it, and
+can also validate a config or run a cascade on its own. A web interface comes later.
 
 Requires Node >= 22.13 (for the built-in `node:sqlite`) and restic >= 0.17.
 
@@ -17,13 +17,45 @@ Requires Node >= 22.13 (for the built-in `node:sqlite`) and restic >= 0.17.
 `run --local` runs one cascade in the foreground, without the daemon. The first Ctrl+C stops the
 current step (SIGTERM, then SIGKILL), the second exits at once.
 
+## The daemon
+
+    (umask 077; openssl rand -hex 32 > /etc/rescade/token)
+    rescaded --config-dir /etc/rescade/config      # API on 127.0.0.1:8765, history in /var/lib/rescade
+
+At start it checks every repo (initializing missing ones) and refuses to start on config errors or on
+a reachable repo it cannot use (wrong password, failed init); unreachable repos only show in the state.
+SIGHUP rereads the config (a broken one is reported and the old one kept), SIGTERM stops: runs in
+progress end as `interrupted`. Logs are JSON lines on stdout.
+
+Settings come from flags or the environment, never from the YAML: `--addr` / `RESCADE_ADDR`,
+`--config-dir` / `RESCADE_CONFIG_DIR`, `--data-dir` / `RESCADE_DATA_DIR`, `--restic` / `RESCADE_RESTIC`,
+`--token-file` / `RESCADE_TOKEN_FILE` (or the token itself in `RESCADE_TOKEN`), `--log-level` /
+`RESCADE_LOG_LEVEL`, `RESCADE_REPO_CHECK_TIMEOUT` (default `2m`), `RESCADE_ALLOWED_HOSTS` (Host header
+values to accept when listening on a public address), `RESCADE_CORS_ORIGINS`. See `rescaded --help`.
+
+The API needs `Authorization: Bearer <token>` on every request:
+`GET /cascades`, `GET /runs?cascade=&limit=&before=`, `GET /runs/:id`, `GET /runs/:id/log?step=`,
+`POST /cascades/:name/run`, `POST /runs/:id/cancel`, `GET /repos`, `GET /events?run=|cascade=` (server-sent events).
+
+## The client
+
+    rescade run <cascade> [--detach]    # start and follow; Ctrl+C cancels the run
+    rescade status                      # cascades with their last and next runs
+    rescade runs [--cascade <name>] [--limit <n>]
+    rescade show <run>
+    rescade log <run> [--step <n>]
+    rescade cancel <run>
+    rescade repos
+
+All of them take `--json`, `--url` (default `$RESCADE_URL`, then `http://127.0.0.1:8765`) and
+`--token-file` (default `$RESCADE_TOKEN`, `$RESCADE_TOKEN_FILE`, then `~/.config/rescade/token`).
+
 Exit codes:
 
 - `validate`: 0 valid, 1 errors in the config, 2 bad usage.
-- `run`: 0 success, 3 warning, 1 failed or config errors, 130 cancelled, 75 skipped (repos busy; only under the daemon), 2 bad usage.
-
-Environment: `RESCADE_CONFIG_DIR` (default `./config`), `RESCADE_RESTIC` (default `restic`),
-`RESCADE_REPO_CHECK_TIMEOUT` (how long a repo may take to answer before a step, default `2m`).
+- `run`: 0 success, 3 warning, 1 failed, interrupted or config errors, 130 cancelled,
+  75 skipped (repos busy or the cascade already running), 2 bad usage.
+- the others: 0 done, 1 error from the daemon or no connection, 2 bad usage.
 
 ## Config
 
@@ -60,5 +92,6 @@ The design and all decisions are in `docs/DESIGN.md`; `CLAUDE.md` carries the co
 ## Layout
 
     packages/core   config loader, restic adapter, executor, repo mutexes, runner, scheduler, SQLite store
+    packages/daemon the `rescaded` daemon: HTTP API (Fastify), signals, startup checks
     packages/cli    the `rescade` command
     examples/config a complete example config

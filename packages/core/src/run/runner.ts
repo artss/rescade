@@ -1,4 +1,5 @@
 import type { Config } from "../config/types.js";
+import type { EnsureResult } from "../restic/ensure.js";
 import type { LogRecord, RunRecord, StepRecord, Store, Trigger } from "../store/store.js";
 import { runCascade, type RunEvent, type RunOptions, type RunResult } from "./cascade.js";
 import { RepoLocks } from "./locks.js";
@@ -11,7 +12,8 @@ export interface RunnerOptions extends Pick<RunOptions, "restic" | "env" | "kill
 export type RunnerEvent =
   | { kind: "run"; run: RunRecord }
   | { kind: "step"; step: StepRecord }
-  | { kind: "log"; runId: number; log: LogRecord };
+  | { kind: "log"; runId: number; log: LogRecord }
+  | { kind: "repo"; repo: string; result: EnsureResult; at: number };
 
 interface Active {
   run: RunRecord;
@@ -28,6 +30,7 @@ export class Runner {
   private config: Config;
   private readonly active = new Map<string, Active>();
   private readonly listeners = new Set<(event: RunnerEvent) => void>();
+  private stopping = false;
 
   constructor(
     config: Config,
@@ -46,6 +49,11 @@ export class Runner {
     return () => this.listeners.delete(listener);
   }
 
+  /** True once `stop` was called: new runs are refused. */
+  get isStopping(): boolean {
+    return this.stopping;
+  }
+
   /** Runs in progress, including those waiting for repos. */
   running(): RunRecord[] {
     return [...this.active.values()].map((a) => ({ ...a.run }));
@@ -59,6 +67,7 @@ export class Runner {
     const config = this.config;
     const cascade = config.cascades[cascadeName];
     if (!cascade) throw new Error(`unknown cascade "${cascadeName}"`);
+    if (this.stopping) throw new Error("the runner is stopping");
     const { store } = this.options;
     const now = Date.now();
 
@@ -107,13 +116,18 @@ export class Runner {
           this.emit({ kind: "log", runId: run.id, log });
           return;
         }
-        case "step-end":
-          this.saveStep({ runId: run.id, ...e.result });
+        case "step-end": {
+          const status = this.stopping && e.result.status === "cancelled" ? "interrupted" : e.result.status;
+          this.saveStep({ runId: run.id, ...e.result, status });
           return;
+        }
       }
     };
 
-    const finish = (result: RunResult) => setStatus(result.status, result.reason, result.finishedAt);
+    const finish = (result: RunResult) =>
+      this.stopping && result.status === "cancelled"
+        ? setStatus("interrupted", "the daemon stopped during the run", result.finishedAt)
+        : setStatus(result.status, result.reason, result.finishedAt);
     const done = runCascade(config, cascadeName, {
       restic: this.options.restic,
       env: this.options.env,
@@ -121,6 +135,7 @@ export class Runner {
       repoCheckTimeoutMs: this.options.repoCheckTimeoutMs,
       signal: controller.signal,
       onEvent,
+      onRepoChecked: (repo, result) => this.emit({ kind: "repo", repo, result, at: Date.now() }),
       lock: (repos, wait) =>
         this.locks.acquire(repos, owner, {
           wait: cascade.onBusy === "wait",
@@ -145,6 +160,16 @@ export class Runner {
       }
     }
     return false;
+  }
+
+  /**
+   * Refuses new runs, stops the ones in progress (SIGTERM to their processes) and waits for them.
+   * They end as `interrupted`, not `cancelled`.
+   */
+  async stop(): Promise<void> {
+    this.stopping = true;
+    for (const a of this.active.values()) a.controller.abort();
+    await this.idle();
   }
 
   /** Resolves when no run is in progress. */

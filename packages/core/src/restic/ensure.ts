@@ -39,7 +39,10 @@ export function ensureRepo(
 ): Promise<EnsureResult> {
   let result = memo.get(name);
   if (!result) {
-    result = ensure(ctx, name, log, memo);
+    result = ensure(ctx, name, log, memo).then((r) => {
+      if (r.ok || r.problem !== "cancelled") ctx.onRepoChecked?.(name, r);
+      return r;
+    });
     memo.set(name, result);
   }
   return result;

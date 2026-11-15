@@ -1,4 +1,5 @@
 import type { BackupSet, BackupStep, CheckStep, PruneStep, Repo, Retention } from "../config/types.js";
+import type { EnsureResult } from "./ensure.js";
 import { runProcess, type ProcessResult, type Stream } from "./process.js";
 
 /** restic exit codes (0.17+). */
@@ -23,6 +24,8 @@ export interface ResticContext {
   killGraceMs?: number;
   /** Limit for `restic cat config`: restic retries an unreachable REST/S3 backend for many minutes. */
   repoCheckTimeoutMs?: number;
+  /** Called with the outcome of every repo check (not for cancelled ones), to keep repo state. */
+  onRepoChecked?: (repo: string, result: EnsureResult) => void;
 }
 
 export const DEFAULT_REPO_CHECK_TIMEOUT_MS = 2 * 60 * 1000;

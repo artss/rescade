@@ -65,6 +65,8 @@ export interface RunOptions {
   /** Limit for checking that a repo exists and is reachable (`restic cat config`). */
   repoCheckTimeoutMs?: number;
   onEvent?: (event: RunEvent) => void;
+  /** Called with the outcome of every repo check made before a step. */
+  onRepoChecked?: ResticContext["onRepoChecked"];
   /**
    * Takes the mutexes of the repos a step touches and applies `on-busy`.
    * Without it steps run unguarded (`run --local`).
@@ -114,6 +116,7 @@ export async function runCascade(config: Config, cascadeName: string, options: R
     signal: options.signal,
     killGraceMs: options.killGraceMs,
     repoCheckTimeoutMs: options.repoCheckTimeoutMs,
+    onRepoChecked: options.onRepoChecked,
   };
   const startedAt = Date.now();
   const results: StepResult[] = [];
