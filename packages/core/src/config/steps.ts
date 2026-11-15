@@ -64,7 +64,7 @@ export interface StepResult {
 /**
  * Validates one entry of `steps:`. A step is a mapping with exactly one action key
  * (backup, retain, prune, check, copy, run) and an optional `name`.
- * `base` is the path of the step relative to its chain entry.
+ * `base` is the path of the step relative to its cascade entry.
  */
 export function validateStep(raw: unknown, base: Path): StepResult {
   if (!isPlainObject(raw)) {

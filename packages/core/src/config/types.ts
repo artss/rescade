@@ -89,9 +89,9 @@ export type Step = BackupStep | RetainStep | PruneStep | CheckStep | CopyStep | 
 
 export type OnBusy = "wait" | "skip";
 
-export interface Chain {
+export interface Cascade {
   description?: string;
-  /** Cron expressions; empty means the chain only runs on demand. */
+  /** Cron expressions; empty means the cascade only runs on demand. */
   schedule: string[];
   timezone?: string;
   onBusy: OnBusy;
@@ -102,7 +102,7 @@ export interface Chain {
 export interface Config {
   repos: Record<string, Repo>;
   sets: Record<string, BackupSet>;
-  chains: Record<string, Chain>;
+  cascades: Record<string, Cascade>;
 }
 
 /** Applied to `run` steps that do not set their own timeout. */

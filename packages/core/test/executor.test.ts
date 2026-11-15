@@ -2,7 +2,7 @@ import { mkdtemp, realpath, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { runChain, type Chain, type RunEvent, type RunOptions, type Step } from "../src/index.js";
+import { runCascade, type Cascade, type RunEvent, type RunOptions, type Step } from "../src/index.js";
 import { baseConfig, FAKE_RESTIC, FakeState } from "./helpers/fake.js";
 
 let fake: FakeState;
@@ -13,7 +13,7 @@ afterEach(async () => {
   await fake.remove();
 });
 
-const chain = (...steps: Step[]): Chain => ({ schedule: [], onBusy: "skip", steps });
+const cascade = (...steps: Step[]): Cascade => ({ schedule: [], onBusy: "skip", steps });
 const backup: Step = { type: "backup", set: "s", repo: "a", tags: [] };
 const retainA: Step = { type: "retain", repo: "a" };
 const checkA: Step = { type: "check", repo: "a" };
@@ -21,7 +21,7 @@ const copyAB: Step = { type: "copy", from: "a", to: "b" };
 
 async function run(steps: Step[], env: Record<string, string> = {}, extra: Partial<RunOptions> = {}) {
   const events: RunEvent[] = [];
-  const result = await runChain(baseConfig({ c: chain(...steps) }), "c", {
+  const result = await runCascade(baseConfig({ c: cascade(...steps) }), "c", {
     restic: FAKE_RESTIC,
     env: fake.env(env),
     killGraceMs: 500,
@@ -32,7 +32,7 @@ async function run(steps: Step[], env: Record<string, string> = {}, extra: Parti
   return { result, events, logs, statuses: result.steps.map((s) => s.status) };
 }
 
-describe("running a chain", () => {
+describe("running a cascade", () => {
   it("initializes missing repos and runs every step", async () => {
     const { result, logs } = await run([backup, retainA, checkA, copyAB, { type: "retain", repo: "b" }]);
 

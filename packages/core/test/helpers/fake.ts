@@ -28,7 +28,7 @@ export class FakeState {
     return new FakeState(dir);
   }
 
-  /** Base environment for runChain: PATH (to find node) plus the fake's switches. */
+  /** Base environment for runCascade: PATH (to find node) plus the fake's switches. */
   env(extra: Record<string, string> = {}): Record<string, string> {
     return { PATH: process.env.PATH ?? "/usr/bin:/bin", FAKE_RESTIC_STATE: this.dir, ...extra };
   }
@@ -77,8 +77,8 @@ export function repo(p: string, extra: Partial<Repo> = {}): Repo {
   return { path: p, password: `pw-${path.basename(p)}`, env: {}, options: {}, ...extra };
 }
 
-/** a <- b (b is created from a), both with a retention policy; set "s"; chains are added per test. */
-export function baseConfig(chains: Config["chains"] = {}): Config {
+/** a <- b (b is created from a), both with a retention policy; set "s"; cascades are added per test. */
+export function baseConfig(cascades: Config["cascades"] = {}): Config {
   return {
     repos: {
       a: repo("/r/a", { retention: { daily: 7 } }),
@@ -86,6 +86,6 @@ export function baseConfig(chains: Config["chains"] = {}): Config {
       c: repo("/r/c"),
     },
     sets: { s: { include: ["/etc", "/home"], exclude: ["**/venv"], tags: ["auto"], oneFileSystem: true, excludeCaches: false } },
-    chains,
+    cascades,
   };
 }

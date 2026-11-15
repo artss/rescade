@@ -6,16 +6,16 @@ import { expandString } from "./expand.js";
 import { fromZod, isPlainObject, type Issue, type Path } from "./issues.js";
 import { locate, positionAt, type Source } from "./locate.js";
 import {
-  ChainSchema,
+  CascadeSchema,
   RepoSchema,
   SetSchema,
-  normalizeChainHeader,
+  normalizeCascadeHeader,
   normalizeRepo,
   normalizeSet,
 } from "./schema.js";
-import { checkSemantics, type ChainDraft, type Section } from "./semantic.js";
+import { checkSemantics, type CascadeDraft, type Section } from "./semantic.js";
 import { validateStep } from "./steps.js";
-import type { BackupSet, Chain, Config, Repo } from "./types.js";
+import type { BackupSet, Cascade, Config, Repo } from "./types.js";
 
 export interface LoadOptions {
   /** A directory of *.yaml / *.yml files, or a single YAML file. */
@@ -51,8 +51,8 @@ export interface LoadResult {
   origins: Record<string, Origin>;
 }
 
-const SECTIONS: readonly Section[] = ["repos", "sets", "chains"];
-const SINGULAR: Record<Section, string> = { repos: "repo", sets: "set", chains: "chain" };
+const SECTIONS: readonly Section[] = ["repos", "sets", "cascades"];
+const SINGULAR: Record<Section, string> = { repos: "repo", sets: "set", cascades: "cascade" };
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 interface Entry {
@@ -184,8 +184,8 @@ export async function loadConfig(options: LoadOptions): Promise<LoadResult> {
   const declaredSets = new Set<string>();
   const repos = new Map<string, Repo>();
   const sets = new Map<string, BackupSet>();
-  const chains = new Map<string, ChainDraft>();
-  const chainEntries = new Map<string, Entry>();
+  const cascades = new Map<string, CascadeDraft>();
+  const cascadeEntries = new Map<string, Entry>();
 
   for (const entry of entries.values()) {
     const { section, name, raw } = entry;
@@ -201,7 +201,7 @@ export async function loadConfig(options: LoadOptions): Promise<LoadResult> {
       if (!r.success) fromZod(r.error, [], raw).forEach((i) => reportIssue(entry, i));
       else sets.set(name, normalizeSet(r.data));
     } else {
-      const r = ChainSchema.safeParse(raw);
+      const r = CascadeSchema.safeParse(raw);
       if (!r.success) {
         fromZod(r.error, [], raw).forEach((i) => reportIssue(entry, i));
         // still check the steps that are there so one run reports as much as possible
@@ -215,14 +215,14 @@ export async function loadConfig(options: LoadOptions): Promise<LoadResult> {
         result.issues.forEach((x) => reportIssue(entry, x));
         return result.step;
       });
-      chains.set(name, { header: normalizeChainHeader(r.data), steps });
-      chainEntries.set(name, entry);
+      cascades.set(name, { header: normalizeCascadeHeader(r.data), steps });
+      cascadeEntries.set(name, entry);
     }
   }
 
   /* ---- 3. checks that look across entries ---- */
 
-  checkSemantics({ declaredRepos, declaredSets, repos, chains }, (section, name, p, message, severity = "error", at) => {
+  checkSemantics({ declaredRepos, declaredSets, repos, cascades }, (section, name, p, message, severity = "error", at) => {
     const entry = entries.get(`${section}/${name}`);
     if (entry) reportIssue(entry, { path: p, message, ...(at ? { at } : {}) }, severity);
   });
@@ -247,14 +247,14 @@ export async function loadConfig(options: LoadOptions): Promise<LoadResult> {
   };
 
   if (ok) {
-    const chainsOut: Record<string, Chain> = {};
-    for (const [name, draft] of chains) {
-      chainsOut[name] = { ...draft.header, steps: draft.steps as NonNullable<(typeof draft.steps)[number]>[] };
+    const cascadesOut: Record<string, Cascade> = {};
+    for (const [name, draft] of cascades) {
+      cascadesOut[name] = { ...draft.header, steps: draft.steps as NonNullable<(typeof draft.steps)[number]>[] };
     }
     result.config = {
       repos: Object.fromEntries(repos),
       sets: Object.fromEntries(sets),
-      chains: chainsOut,
+      cascades: cascadesOut,
     };
   }
   return result;

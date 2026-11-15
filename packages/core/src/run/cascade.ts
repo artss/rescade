@@ -34,7 +34,7 @@ export interface StepResult {
 }
 
 export interface RunResult {
-  chain: string;
+  cascade: string;
   status: RunStatus;
   startedAt: number;
   finishedAt: number;
@@ -79,10 +79,10 @@ export function describeStep(step: Step): string {
   }
 }
 
-/** Runs the steps of one chain in order. Stops at the first failed step; the rest are skipped. */
-export async function runChain(config: Config, chainName: string, options: RunOptions): Promise<RunResult> {
-  const chain = config.chains[chainName];
-  if (!chain) throw new Error(`unknown chain "${chainName}"`);
+/** Runs the steps of one cascade in order. Stops at the first failed step; the rest are skipped. */
+export async function runCascade(config: Config, cascadeName: string, options: RunOptions): Promise<RunResult> {
+  const cascade = config.cascades[cascadeName];
+  if (!cascade) throw new Error(`unknown cascade "${cascadeName}"`);
 
   const emit = options.onEvent ?? (() => {});
   const ctx: ResticContext = {
@@ -97,7 +97,7 @@ export async function runChain(config: Config, chainName: string, options: RunOp
   const results: StepResult[] = [];
   let stopped = false;
 
-  for (const [index, step] of chain.steps.entries()) {
+  for (const [index, step] of cascade.steps.entries()) {
     const label = describeStep(step);
     if (stopped || options.signal?.aborted) {
       const result: StepResult = { index, type: step.type, label, status: "skipped" };
@@ -128,7 +128,7 @@ export async function runChain(config: Config, chainName: string, options: RunOp
     if (outcome.status === "failed" || outcome.status === "cancelled") stopped = true;
   }
 
-  return { chain: chainName, status: overall(results), startedAt, finishedAt: Date.now(), steps: results };
+  return { cascade: cascadeName, status: overall(results), startedAt, finishedAt: Date.now(), steps: results };
 }
 
 function overall(steps: StepResult[]): RunStatus {
