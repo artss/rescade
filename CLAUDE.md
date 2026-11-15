@@ -20,7 +20,8 @@
 SIGHUP, остановка с `interrupted`, чистка истории раз в час, `repos.ts` состояние репо в памяти). Срок хранения истории
 и логов `Store.prune`, локи restic `src/restic/lockfiles.ts` (читаются в ensure перед каждым шагом). `packages/cli`: `validate`, `run --local`, а через
 демон `run [--detach]`, `status`, `runs`, `show`, `log`, `cancel`, `repos` (`client.ts` HTTP и SSE, `remote.ts` команды).
-152 теста vitest, фейковый restic в `packages/core/test/fake-restic.mjs`, 7 интеграционных с настоящим restic
+Бэкенды restic (`src/config/backends.ts`: префикс `path`, опции по бэкенду, конфликты `env`/`options` в парах
+`copy`/`from`; описание в `docs/backends.md`). 159 тестов vitest, фейковый restic в `packages/core/test/fake-restic.mjs`, 7 интеграционных с настоящим restic
 (проверено на 0.19.1), пример в `examples/config`.
 
 Следующий шаг (6): swagger (OpenAPI по схемам маршрутов), потом (7) веб-интерфейс.
@@ -73,5 +74,9 @@ SIGHUP, остановка с `interrupted`, чистка истории раз 
 - Разрешённые `Host` считаются после `listen`: при `port: 0` настоящий порт известен только тогда.
 - Локи читаются с `--no-lock`, чтобы не оставлять своих; короткий id `restic cat lock` не принимает, нужен полный (64 hex).
 - `fake.trace()` не показывает чтение локов (`list`, `cat lock`), чтобы старые проверки последовательностей вызовов не менялись.
+- `path` вида `host:dir` без известного префикса restic 0.19 отвергает (`invalid backend`, подсказывает `local:`), а опции
+  чужого бэкенда (`-o s3.region` у sftp) молча игнорирует; неизвестная опция своего бэкенда = `Fatal`.
+- `copy` и `init --from-repo` идут одним процессом: свои переменные у источника только `RESTIC_FROM_REPOSITORY*`/`PASSWORD*`,
+  ключи бэкенда (`AWS_*` и т. п.) и `-o` общие на оба репо.
 - В режиме `--allow-missing-env` значения подменяются на `<NAME is unset>`: годится для валидации, не для запуска
   (список в `LoadResult.missingEnv`).

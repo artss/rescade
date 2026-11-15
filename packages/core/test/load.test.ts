@@ -369,6 +369,118 @@ describe("cross-references", () => {
   });
 });
 
+describe("backends", () => {
+  const repo = (body: string) => `repos:\n  a:\n    password: p\n${body}`;
+
+  it("accepts every restic backend with its own options", async () => {
+    await write({
+      "00.yaml": [
+        "repos:",
+        "  local: { path: /srv/r, password: p, options: { local.connections: 4 } }",
+        "  explicit: { path: 'local:dir:with:colons', password: p }",
+        "  sftp: { path: 'sftp:user@host:/r', password: p, options: { sftp.args: '-i /etc/key' } }",
+        "  sftp-url: { path: 'sftp://user@[::1]:2222//r', password: p }",
+        "  rest: { path: 'rest:https://u:p@host:8000/r/', password: p }",
+        "  s3: { path: 's3:s3.us-east-1.amazonaws.com/b', password: p, env: { AWS_ACCESS_KEY_ID: k }, options: { s3.storage-class: STANDARD_IA } }",
+        "  swift: { path: 'swift:c:/p', password: p }",
+        "  b2: { path: 'b2:bucket:path', password: p, options: { b2.connections: 10 } }",
+        "  azure: { path: 'azure:c:/', password: p, options: { azure.access-tier: Cool } }",
+        "  gs: { path: 'gs:b:/', password: p, options: { gs.region: eu } }",
+        "  rclone: { path: 'rclone:remote:path', password: p, options: { rclone.program: /usr/bin/rclone } }",
+        "",
+      ].join("\n"),
+    });
+    const r = await load();
+    expect(lines(r)).toEqual([]);
+    expect(Object.keys(r.config!.repos)).toHaveLength(11);
+  });
+
+  it("rejects a prefix restic would read as a local directory", async () => {
+    await write({ "00.yaml": repo("    path: i1.backups.lan:backups/system\n") + "  b: { path: 'S3:x/y', password: p }\n" });
+    expect(lines(await load())).toEqual([
+      '00.yaml:4:11: error: "i1.backups.lan:" is not a restic backend (local, sftp, rest, s3, swift, b2, azure, gs, rclone). Write "sftp:i1.backups.lan:backups/system" for SFTP, or "local:i1.backups.lan:backups/system" for a local directory with ":" in its name',
+      '00.yaml:5:14: error: "S3:" is not a restic backend (local, sftp, rest, s3, swift, b2, azure, gs, rclone). Write "sftp:S3:x/y" for SFTP, or "local:S3:x/y" for a local directory with ":" in its name',
+    ]);
+  });
+
+  it("checks option names against the repo's backend", async () => {
+    await write({
+      "00.yaml": repo("    path: sftp:host:r\n    options: { s3.region: x, sftp.argz: y, region: z, foo.bar: w }\n"),
+    });
+    const r = await load();
+    expect(lines(r)).toEqual([
+      '00.yaml:5:16: error: option "s3.region" is for the s3 backend, but this repo uses sftp; restic would ignore it',
+      '00.yaml:5:30: warning: option "sftp.argz" is unknown to rescade (known sftp options: args, command, connections); restic fails on options it does not know',
+      '00.yaml:5:44: error: unknown option "region": options look like "<backend>.<name>"',
+      '00.yaml:5:55: error: unknown option "foo.bar": options look like "<backend>.<name>"',
+    ]);
+  });
+
+  it("rejects variables that rescade sets itself", async () => {
+    await write({ "00.yaml": repo("    path: /r\n    env: { RESTIC_PASSWORD: x, RESTIC_FROM_REPOSITORY: y }\n") });
+    expect(lines(await load())).toEqual([
+      '00.yaml:5:12: error: RESTIC_PASSWORD is set by rescade from "path" and "password"; remove it from env',
+      '00.yaml:5:32: error: RESTIC_FROM_REPOSITORY is set by rescade from "path" and "password"; remove it from env',
+    ]);
+  });
+
+  const S3_PAIR = (bEnv: string, bOptions = "") => `
+repos:
+  a:
+    path: s3:host/a
+    password: p
+    env: { AWS_ACCESS_KEY_ID: ka, AWS_SECRET_ACCESS_KEY: sa }
+  b:
+    path: s3:host/b
+    password: p
+    from: a
+    env: ${bEnv}
+${bOptions}sets:
+  s: { include: [/x] }
+cascades:
+  c:
+    steps:
+      - copy: { from: a, to: b }
+`;
+
+  it("rejects credentials that one restic process cannot hold for both repos", async () => {
+    await write({ "00.yaml": S3_PAIR("{ AWS_ACCESS_KEY_ID: kb, AWS_SECRET_ACCESS_KEY: sb }") });
+    const r = await load();
+    expect(r.ok).toBe(false);
+    const hint =
+      "restic runs once for both repos; put REST credentials into the URL, SFTP keys into ~/.ssh/config, or use the rclone backend with a remote per account";
+    expect(lines(r)).toEqual([
+      `00.yaml:10:11: error: init --from-repo: env AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY differ between "a" and "b", but restic would use the values of "b" for both; ${hint}`,
+      `00.yaml:17:9: error: env AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY differ between "a" and "b", but restic would use the values of "b" for both; ${hint}`,
+    ]);
+  });
+
+  it("accepts the same credentials and warns about ones set on one side only", async () => {
+    await write({
+      "00.yaml": S3_PAIR("{ AWS_ACCESS_KEY_ID: ka, AWS_SECRET_ACCESS_KEY: sa }", "    options: { s3.region: eu }\n"),
+    });
+    const r = await load();
+    expect(r.ok).toBe(true);
+    expect(lines(r).map((l) => l.replace(/;.*/, ""))).toEqual([
+      '00.yaml:10:11: warning: init --from-repo: option s3.region set on only one of "a" and "b" also applies to the other',
+      '00.yaml:18:9: warning: option s3.region set on only one of "a" and "b" also applies to the other',
+    ]);
+  });
+
+  it("only warns about differing env when the backends differ", async () => {
+    await write({
+      "00.yaml":
+        "repos:\n  a: { path: /a, password: p, env: { RESTIC_CACERT: /x }, options: { local.connections: 2 } }\n" +
+        "  b: { path: 'rest:https://h/', password: p, from: a, env: { RESTIC_CACERT: /y }, options: { rest.connections: 9 } }\n",
+    });
+    const r = await load();
+    expect(r.ok).toBe(true);
+    expect(lines(r).map((l) => l.replace(/, but.*/, ""))).toEqual([
+      '00.yaml:3:52: warning: init --from-repo: env RESTIC_CACERT differ between "a" and "b"',
+    ]);
+  });
+});
+
 describe("cascades", () => {
   const head = REPOS + SETS;
 
@@ -552,13 +664,13 @@ describe("misc", () => {
   it("parses extra repo and set options", async () => {
     await write({
       "00.yaml":
-        "repos:\n  a:\n    path: s3:x/y\n    password: p\n    env: { AWS_ACCESS_KEY_ID: k, N: 5 }\n    options: { sftp.command: ssh -a }\n    retention: { last: 3, within: 1y6m }\nsets:\n  s:\n    include: [/x]\n    tags: [t]\n    one-file-system: true\n    exclude-caches: true\n",
+        "repos:\n  a:\n    path: s3:x/y\n    password: p\n    env: { AWS_ACCESS_KEY_ID: k, N: 5 }\n    options: { s3.region: eu-west-1 }\n    retention: { last: 3, within: 1y6m }\nsets:\n  s:\n    include: [/x]\n    tags: [t]\n    one-file-system: true\n    exclude-caches: true\n",
     });
     const r = await load();
     expect(lines(r)).toEqual([]);
     expect(r.config!.repos.a).toMatchObject({
       env: { AWS_ACCESS_KEY_ID: "k", N: "5" },
-      options: { "sftp.command": "ssh -a" },
+      options: { "s3.region": "eu-west-1" },
       retention: { last: 3, within: "1y6m" },
     });
     expect(r.config!.sets.s).toMatchObject({ tags: ["t"], oneFileSystem: true, excludeCaches: true });

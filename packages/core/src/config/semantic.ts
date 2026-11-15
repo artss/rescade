@@ -2,6 +2,7 @@ import { Cron } from "croner";
 import type { Path } from "./issues.js";
 import type { Cascade, Repo, Step } from "./types.js";
 import type { Severity } from "./diagnostics.js";
+import { sharedSettingsIssues } from "./backends.js";
 
 export type Section = "repos" | "sets" | "cascades";
 
@@ -63,6 +64,12 @@ function checkFromChains({ declaredRepos, repos }: SemanticInput, report: Report
     if (!declaredRepos.has(repo.from)) {
       report("repos", name, ["from"], `unknown repo "${repo.from}"`);
       continue;
+    }
+    const source = repos.get(repo.from);
+    if (source) {
+      for (const i of sharedSettingsIssues(repo.from, source, name, repo)) {
+        report("repos", name, ["from"], `init --from-repo: ${i.message}`, i.severity);
+      }
     }
 
     // walk the chain looking for a way back to a repo already visited
@@ -159,6 +166,13 @@ function checkCascade(name: string, draft: CascadeDraft, input: SemanticInput, r
                 "warning",
                 "key",
               );
+            }
+            const source = repos.get(step.from);
+            const target = repos.get(step.to);
+            if (source && target) {
+              for (const i of sharedSettingsIssues(step.from, source, step.to, target)) {
+                report("cascades", name, at(), i.message, i.severity, "key");
+              }
             }
           }
         }

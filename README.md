@@ -68,6 +68,9 @@ are merged by name. The same name in two files is an error, and so is an unknown
 - Glob patterns that start with `*` must be quoted: `"**/node_modules"`.
 - Steps: `backup`, `retain`, `prune`, `check`, `copy`, `run`. `retain` applies the repo's `retention`.
 - `from:` on a repo says which repo it is created from (`restic init --from-repo --copy-chunker-params`).
+- Any restic backend works (local, sftp, rest, s3, swift, b2, azure, gs, rclone): credentials go into the
+  repo's `env` (taken from the daemon's environment with `${VAR}`), backend options into `options`
+  (`-o key=value`). Details and caveats, in Russian: `docs/backends.md`.
 - `run` takes `command` as a list of arguments; `shell: true` takes a string. Default timeout 1h.
   The command gets only the step's `env`, not the daemon's environment.
 - `schedule` is a cron expression or a list of them (optionally with `timezone`); without it the cascade
