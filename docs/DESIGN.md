@@ -15,12 +15,12 @@
 ## Пакеты (монорепо, pnpm workspaces)
 
 - `core`: загрузчик конфигов, адаптер restic, исполнитель каскадов, мьютексы репо, планировщик, хранилище, шина событий
-- `daemon`: связывает core с HTTP API, обрабатывает SIGTERM/SIGHUP, ранний прогрев репо при старте
+- `daemon`: бинарник `rescaded`, связывает core с HTTP API, обрабатывает SIGTERM/SIGHUP, ранний прогрев репо при старте
 - `cli`: бинарник `rescade` (подкоманды), клиент API; `validate` работает локально через core
 - `web`: позже
 
 Библиотеки: `yaml` (позиции узлов), `zod` (схема), `croner` (cron), встроенный `node:sqlite` (Node >= 22.13),
-`pino`, лёгкий HTTP (Fastify или `http` + SSE).
+Fastify (позже swagger по схемам маршрутов), `pino`. Логи демона в JSON (stdout): они понадобятся веб-интерфейсу.
 
 ## Конфиг
 
@@ -63,8 +63,8 @@
 - Требуется restic >= 0.17 (коды выхода 10 и 12). Любой другой ненулевой код `cat config` = `unreachable`.
 - `cat config` ограничен таймаутом (`RESCADE_REPO_CHECK_TIMEOUT`, по умолчанию 2m): недоступный REST/S3 restic
   ретраит минутами. Истёк = `unreachable`, init не делается. У backup/prune/copy/check таймаута нет.
-- Коды выхода `rescade run`: 0 success, 3 warning, 1 failed, 130 cancelled, 75 skipped (репо заняты; только через демон),
-  2 ошибка использования.
+- Коды выхода `rescade run`: 0 success, 3 warning, 1 failed или interrupted, 130 cancelled, 75 skipped (репо заняты или
+  каскад уже идёт; только через демон), 2 ошибка использования. Остальные команды клиента: 0, 1 ошибка демона или нет связи, 2.
 
 ## Инициализация репозиториев и сверка параметров
 
@@ -81,14 +81,26 @@
 ## API и настройки сервиса
 
 - TCP (не Unix-сокет), по умолчанию `127.0.0.1:8765`. Токен обязателен всегда (`Authorization: Bearer`, сравнение за постоянное время).
-  Токен через env или файл (права 600), не через аргументы. Проверка заголовка `Host`, CORS только для явно разрешённых origin.
+  Токен через env или файл (права 600), не через аргументы. Без токена демон не стартует и подсказывает, как его создать
+  (сам не генерирует).
+- Проверка `Host`: `localhost`, `127.0.0.1`, `[::1]` и хост из `RESCADE_ADDR`, все с портом демона, плюс `RESCADE_ALLOWED_HOSTS`
+  (через запятую, `host` или `host:port`; без порта = порт демона). Иначе 403.
+- CORS только для origin из `RESCADE_CORS_ORIGINS` (по умолчанию никого). Preflight `OPTIONS` от разрешённого origin
+  проходит без токена.
 - Настройки сервиса через env/флаги, не YAML: `RESCADE_ADDR`, `RESCADE_URL`, `RESCADE_TOKEN_FILE`, `RESCADE_TOKEN`,
-  `RESCADE_CONFIG_DIR`, `RESCADE_DATA_DIR`, срок хранения истории, путь к restic (`RESCADE_RESTIC`),
-  таймаут проверки репо (`RESCADE_REPO_CHECK_TIMEOUT`).
-- Клиент ищет токен: `--token-file`, `RESCADE_TOKEN`, `RESCADE_TOKEN_FILE`, `~/.config/rescade/token`. Сервер: `/etc/rescade/token`.
-  Предупреждение, если права на файл слишком широкие.
+  `RESCADE_CONFIG_DIR`, `RESCADE_DATA_DIR` (по умолчанию `/var/lib/rescade`, база `rescade.db`), срок хранения истории,
+  путь к restic (`RESCADE_RESTIC`), таймаут проверки репо (`RESCADE_REPO_CHECK_TIMEOUT`), `RESCADE_LOG_LEVEL`.
+- Клиент ищет токен: `--token-file`, `RESCADE_TOKEN`, `RESCADE_TOKEN_FILE`, `~/.config/rescade/token`. Сервер: `--token-file`,
+  `RESCADE_TOKEN`, `RESCADE_TOKEN_FILE`, `/etc/rescade/token`. Предупреждение, если права на файл слишком широкие.
 - Эндпоинты: `GET /cascades`, `GET /runs`, `GET /runs/:id`, `GET /runs/:id/log?step=`, `POST /cascades/:name/run`,
-  `POST /runs/:id/cancel`, `GET /repos`, `GET /events` (SSE). Перезагрузка конфига по SIGHUP.
+  `POST /runs/:id/cancel`, `GET /repos`, `GET /events` (SSE). Перезагрузка конфига по SIGHUP; ошибка в новом конфиге
+  оставляет старый. Запуски, уже идущие, доживают со старым конфигом.
+- `GET /events`: события `run`, `step`, `log`, `repo`. Фильтры `?run=<id>` и `?cascade=<name>` (тогда без `repo`).
+  `rescade run` сначала подписывается на `?cascade=`, потом делает POST: так не теряются события, пришедшие раньше ответа.
+- Ошибки API: `{ "error": "..." }`; 400 неверные параметры, 401 токен, 403 `Host`, 404, 409 отмена незапущенного, 503 демон
+  останавливается. Пароли в URL репо (`rest:https://user:pass@...`) в `GET /repos` скрываются.
+- При SIGTERM: стоп планировщика, отмена запусков (SIGTERM детям), они и их шаги получают `interrupted`, потом закрытие API.
+  При старте запуски, оставшиеся `running`/`queued` после падения, помечаются `interrupted`. Второй сигнал завершает сразу.
 - Модель данных: run (id, каскад, триггер, статус, времена, причина), step (индекс, тип, статус, код выхода,
   длительность, summary), log (строки по шагам, отдельно от метаданных для ротации). SQLite (`node:sqlite`, WAL,
   версия схемы в `user_version`). Состояние репо и мьютексы в памяти.
@@ -105,6 +117,6 @@
 1. ~~Загрузчик конфигов и `validate`~~ (сделано)
 2. ~~Адаптер restic и исполнитель одного каскада, `run --local`, фейковый restic для тестов~~ (сделано)
 3. ~~Мьютексы, `on-busy`, планировщик, хранилище SQLite~~ (сделано)
-4. Демон, API, CLI-клиент
-5. Отмена и сигналы, восстановление `interrupted`, ротация логов
+4. ~~Демон, API, CLI-клиент~~ (сделано; базовая остановка с `interrupted` тоже)
+5. Ротация логов и срок хранения истории, swagger, stale-lock'и restic в статусе репо
 6. Веб-интерфейс

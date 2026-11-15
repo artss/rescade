@@ -139,6 +139,20 @@ export class Store {
     this.db.close();
   }
 
+  /**
+   * Marks runs and steps left `running` or `queued` by a daemon that did not stop cleanly as `interrupted`.
+   * Returns how many runs that was.
+   */
+  markInterrupted(at: number): number {
+    const reason = "the daemon stopped during the run";
+    const unfinished = "status IN ('running', 'queued')";
+    this.db.prepare(`UPDATE steps SET status = 'interrupted' WHERE ${unfinished}`).run();
+    const r = this.db
+      .prepare(`UPDATE runs SET status = 'interrupted', reason = ?, finished_at = ? WHERE ${unfinished}`)
+      .run(reason, at);
+    return Number(r.changes);
+  }
+
   insertRun(run: Omit<RunRecord, "id">): RunRecord {
     const r = this.stmts.insertRun.run(
       run.cascade,

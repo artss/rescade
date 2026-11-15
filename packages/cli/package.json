@@ -3,7 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "bin": { "rescade": "./dist/index.js" },
-  "scripts": { "build": "tsc -b" },
-  "dependencies": { "@rescade/core": "workspace:*" }
+  "bin": {
+    "rescade": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@rescade/core": "workspace:*"
+  },
+  "devDependencies": {
+    "pino": "^10.4.0"
+  }
 }

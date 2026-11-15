@@ -15,10 +15,14 @@
 через `AbortSignal`), мьютексы репо (`src/run/locks.ts`, берутся вокруг шага через `RunOptions.lock`),
 оркестратор (`src/run/runner.ts`: `on-busy`, без самоналожения каскада, статусы `queued`/`running`, запись в хранилище,
 события), планировщик (`src/schedule.ts`, croner), хранилище (`src/store/store.ts`, `node:sqlite`).
-`packages/cli`: `rescade validate`, `rescade run --local <cascade>`. 116 тестов vitest, фейковый
-restic в `packages/core/test/fake-restic.mjs`, 6 интеграционных с настоящим restic (проверено на 0.19.1), пример в `examples/config`.
+Прогрев репо при старте (`src/restic/warmup.ts`), чтение токена (`src/token.ts`).
+`packages/daemon`: `rescaded` (`settings.ts` флаги/env/токен/Host, `server.ts` Fastify-маршруты и SSE, `daemon.ts` запуск,
+SIGHUP, остановка с `interrupted`, `repos.ts` состояние репо в памяти). `packages/cli`: `validate`, `run --local`, а через
+демон `run [--detach]`, `status`, `runs`, `show`, `log`, `cancel`, `repos` (`client.ts` HTTP и SSE, `remote.ts` команды).
+146 тестов vitest, фейковый restic в `packages/core/test/fake-restic.mjs`, 6 интеграционных с настоящим restic
+(проверено на 0.19.1), пример в `examples/config`.
 
-Следующий шаг (4): демон (связать `Runner`, `Scheduler`, `Store`, SIGHUP → `setConfig` + `update`), HTTP API, CLI-клиент.
+Следующий шаг (5): ротация логов и срок хранения истории, swagger, stale-lock'и restic в статусе репо.
 
 ## Команды
 
@@ -36,6 +40,8 @@ restic в `packages/core/test/fake-restic.mjs`, 6 интеграционных �
 - Ядро (`core`) без сетевого кода и без обращений к `process` вне CLI/демона. Внешние процессы запускать
   через `spawn` без shell, секреты передавать через окружение процесса, а не через аргументы.
 - Ошибки конфигурации всегда с позицией (файл, строка, колонка). Одна проверка выдаёт как можно больше ошибок за прогон.
+- Тесты демона и CLI берут ядро из исходников: в vitest алиас `@rescade/core` → `packages/core/src`, а CLI в сквозных
+  тестах запускается как `node --conditions=source --import tsx` (условие `source` в `exports` ядра).
 - Каждое новое поведение сопровождается тестом; для исполнителя нужен фейковый restic, а не настоящий.
 - Без лишних зависимостей и без абстракций «на вырост»: проект маленький, решения должны оставаться простыми.
 - Сообщения коммитов по commitlint (`@commitlint/config-conventional`): `type(scope)?: subject`, тип из `feat`, `fix`,
@@ -60,5 +66,9 @@ restic в `packages/core/test/fake-restic.mjs`, 6 интеграционных �
   открытыми и `close` не приходит. Это единственное обращение к `process` в ядре, осознанное.
 - `node:sqlite` на Node 22 при загрузке печатает ExperimentalWarning, поэтому `Store.open` грузит его динамически:
   `validate` и `run --local` его не видят. В тестах предупреждение видно, это нормально.
+- Бинарник демона начинается с `#!/usr/bin/env -S node --disable-warning=ExperimentalWarning`, иначе первая строка
+  каждого лога была бы предупреждением `node:sqlite`. `tsc` не ставит бит исполнения на `dist/*.js`.
+- `fetch` в Node отказывается ходить на «плохие» порты (1, 9 и др.) с `bad port`; в тестах на «нет связи» брать свободный порт.
+- Разрешённые `Host` считаются после `listen`: при `port: 0` настоящий порт известен только тогда.
 - В режиме `--allow-missing-env` значения подменяются на `<NAME is unset>`: годится для валидации, не для запуска
   (список в `LoadResult.missingEnv`).

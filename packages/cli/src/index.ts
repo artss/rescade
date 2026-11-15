@@ -7,9 +7,10 @@ import {
   parseDuration,
   runCascade,
   type RunEvent,
-  type RunStatus,
-  type StepResult,
 } from "@rescade/core";
+import { ApiClient, ClientError, resolveConnection } from "./client.js";
+import { logLine, RUN_EXIT, stepLine } from "./output.js";
+import { cancelRun, listRepos, listRuns, runRemote, showLog, showRun, status } from "./remote.js";
 
 const HELP = `rescade - cascades of restic commands
 
@@ -17,22 +18,37 @@ Usage:
   rescade validate [--config-dir <path>] [--allow-missing-env] [--json]
   rescade run --local <cascade> [--config-dir <path>] [--restic <path>]
 
+  through the daemon:
+  rescade run <cascade> [--detach]    start a cascade and follow it (Ctrl+C cancels it)
+  rescade status                      cascades, their last and next runs
+  rescade runs [--cascade <name>] [--limit <n>] [--before <id>]
+  rescade show <run>                  a run and its steps
+  rescade log <run> [--step <n>]      the log of a run (steps count from 1)
+  rescade cancel <run>
+  rescade repos                       repo state and who holds them
+
 Options:
   --config-dir <path>   directory with *.yaml files, or a single file
                         (default: $RESCADE_CONFIG_DIR, then ./config)
   --allow-missing-env   validate: report unset \${VAR} as warnings instead of errors
-  --json                validate: machine-readable output
+  --json                machine-readable output
   --local               run: run the cascade in this process, without the daemon
-  --restic <path>       run: restic binary (default: $RESCADE_RESTIC, then restic)
+  --restic <path>       run --local: restic binary (default: $RESCADE_RESTIC, then restic)
+  --detach              run: only start the run and print its id
+  --url <url>           the daemon (default: $RESCADE_URL, then http://127.0.0.1:8765)
+  --token-file <path>   API token (default: $RESCADE_TOKEN, $RESCADE_TOKEN_FILE,
+                        then ~/.config/rescade/token)
+  -h, --help            show this help
 
 Environment:
-  RESCADE_REPO_CHECK_TIMEOUT   how long to wait for a repo to answer before a step,
+  RESCADE_REPO_CHECK_TIMEOUT   run --local: how long to wait for a repo to answer before a step,
                                e.g. "30s" or "5m" (default: 2m)
-  -h, --help            show this help
 
 Exit codes:
   validate  0 valid, 1 config has errors, 2 bad usage
-  run       0 success, 3 warning, 1 failed or config errors, 130 canceled, 2 bad usage
+  run       0 success, 3 warning, 1 failed, interrupted or config errors, 130 cancelled,
+            75 skipped (repos busy or the cascade already running), 2 bad usage
+  others    0 done, 1 error from the daemon or no connection, 2 bad usage
 `;
 
 function usageError(e: unknown): number {
@@ -91,9 +107,6 @@ async function validate(argv: string[]): Promise<number> {
   return 1;
 }
 
-// skipped (repos busy) only happens under the daemon, which shares repo mutexes between runs
-const RUN_EXIT: Record<RunStatus, number> = { success: 0, warning: 3, failed: 1, cancelled: 130, skipped: 75 };
-
 async function run(argv: string[]): Promise<number> {
   let parsed;
   try {
@@ -103,6 +116,9 @@ async function run(argv: string[]): Promise<number> {
         "config-dir": { type: "string" },
         local: { type: "boolean", default: false },
         restic: { type: "string" },
+        detach: { type: "boolean", default: false },
+        json: { type: "boolean", default: false },
+        ...CONNECTION_OPTIONS,
         help: { type: "boolean", short: "h", default: false },
       },
       allowPositionals: true,
@@ -119,11 +135,10 @@ async function run(argv: string[]): Promise<number> {
     console.error("rescade: run needs exactly one cascade name");
     return 2;
   }
-  if (!values.local) {
-    console.error("rescade: the daemon is not implemented yet; use run --local to run the cascade in this process");
-    return 2;
-  }
   const cascadeName = positionals[0]!;
+  if (!values.local) {
+    return runRemote(await connect(values), cascadeName, values.detach, values.json);
+  }
 
   let repoCheckTimeoutMs: number | undefined;
   const checkTimeout = process.env.RESCADE_REPO_CHECK_TIMEOUT;
@@ -169,7 +184,7 @@ async function run(argv: string[]): Promise<number> {
         console.log(`==> ${tag(e.index)} ${e.label}`);
         break;
       case "log":
-        (e.stream === "stdout" ? console.log : console.error)(`    ${e.stream === "info" ? "rescade: " : ""}${e.line}`);
+        (e.stream === "stdout" ? console.log : console.error)(logLine(e.stream, e.line));
         break;
       case "step-end":
         console.log(stepLine(e.result, tag(e.result.index)));
@@ -188,10 +203,78 @@ async function run(argv: string[]): Promise<number> {
   return RUN_EXIT[result.status];
 }
 
-function stepLine(r: StepResult, tag: string): string {
-  if (r.status === "skipped") return `--- ${tag} skipped: ${r.label}`;
-  const took = r.durationMs === undefined ? "" : ` in ${formatDuration(r.durationMs)}`;
-  return `<== ${tag} ${r.status}${took}${r.reason === undefined ? "" : `: ${r.reason}`}`;
+const CONNECTION_OPTIONS = {
+  url: { type: "string" },
+  "token-file": { type: "string" },
+} as const;
+
+async function connect(values: { url?: string; "token-file"?: string }): Promise<ApiClient> {
+  const conn = await resolveConnection({ url: values.url, tokenFile: values["token-file"] }, process.env, (m) =>
+    console.error(`rescade: warning: ${m}`),
+  );
+  return new ApiClient(conn);
+}
+
+/** Commands that only ask the daemon: status, runs, show, log, cancel, repos. */
+async function remote(command: string, argv: string[]): Promise<number> {
+  let parsed;
+  try {
+    parsed = parseArgs({
+      args: argv,
+      options: {
+        ...CONNECTION_OPTIONS,
+        json: { type: "boolean", default: false },
+        cascade: { type: "string" },
+        limit: { type: "string" },
+        before: { type: "string" },
+        step: { type: "string" },
+        help: { type: "boolean", short: "h", default: false },
+      },
+      allowPositionals: true,
+    });
+  } catch (e) {
+    return usageError(e);
+  }
+  const { values, positionals } = parsed;
+  if (values.help) {
+    process.stdout.write(HELP);
+    return 0;
+  }
+  const needsRun = command === "show" || command === "log" || command === "cancel";
+  if (positionals.length !== (needsRun ? 1 : 0)) {
+    console.error(needsRun ? `rescade: ${command} needs one run id` : `rescade: ${command} takes no arguments`);
+    return 2;
+  }
+  for (const [name, value] of [["limit", values.limit], ["before", values.before], ["step", values.step], ["run id", positionals[0]]]) {
+    if (value !== undefined && !/^[1-9]\d*$/.test(value)) {
+      console.error(`rescade: ${name} must be a positive number, got "${value}"`);
+      return 2;
+    }
+  }
+  const allowed: Record<string, string[]> = { runs: ["cascade", "limit", "before"], log: ["step"] };
+  for (const name of ["cascade", "limit", "before", "step"] as const) {
+    if (values[name] !== undefined && !(allowed[command] ?? []).includes(name)) {
+      console.error(`rescade: ${command} does not take --${name}`);
+      return 2;
+    }
+  }
+
+  const client = await connect(values);
+  const id = positionals[0]!;
+  switch (command) {
+    case "status":
+      return status(client, values.json);
+    case "runs":
+      return listRuns(client, { cascade: values.cascade, limit: values.limit, before: values.before }, values.json);
+    case "show":
+      return showRun(client, id, values.json);
+    case "log":
+      return showLog(client, id, values.step, values.json);
+    case "cancel":
+      return cancelRun(client, id, values.json);
+    default:
+      return listRepos(client, values.json);
+  }
 }
 
 function summarize(config: Awaited<ReturnType<typeof loadConfig>>["config"]) {
@@ -210,6 +293,13 @@ async function main(argv: string[]): Promise<number> {
       return validate(rest);
     case "run":
       return run(rest);
+    case "status":
+    case "runs":
+    case "show":
+    case "log":
+    case "cancel":
+    case "repos":
+      return remote(command, rest);
     case undefined:
     case "-h":
     case "--help":
@@ -226,6 +316,10 @@ async function main(argv: string[]): Promise<number> {
 main(process.argv.slice(2)).then(
   (code) => process.exit(code),
   (err) => {
+    if (err instanceof ClientError) {
+      console.error(`rescade: ${err.message}`);
+      process.exit(1);
+    }
     console.error(err instanceof Error ? (err.stack ?? err.message) : err);
     process.exit(70);
   },

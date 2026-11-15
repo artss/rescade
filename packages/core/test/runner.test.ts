@@ -1,7 +1,7 @@
 import { existsSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { Runner, Store, type Cascade, type Config, type RunnerEvent, type Step } from "../src/index.js";
+import { Runner, Store, warmUp, type Cascade, type Config, type RunnerEvent, type Step } from "../src/index.js";
 import { baseConfig, FAKE_RESTIC, FakeState } from "./helpers/fake.js";
 
 let fake: FakeState;
@@ -211,5 +211,72 @@ describe("store", () => {
     });
     second.close();
     expect(existsSync(file)).toBe(true);
+  });
+});
+
+describe("stopping and repo state", () => {
+  it("interrupts runs in progress on stop and refuses new ones", async () => {
+    const hold = holder(["a"]);
+    const { runner } = setup({ maintenance: { steps: [hold.step, retainA] }, daily: { onBusy: "wait", steps: [backupA] } });
+    const m = runner.trigger("maintenance", "schedule");
+    await until(() => runner.locks.holder("a") !== undefined, "maintenance to take repo a");
+    const daily = runner.trigger("daily", "schedule");
+    await until(() => store.run(daily.id)?.status === "queued", "daily to queue");
+
+    await runner.stop();
+    expect(runner.isStopping).toBe(true);
+    expect(store.run(m.id)).toMatchObject({
+      status: "interrupted",
+      reason: "the daemon stopped during the run",
+      steps: [{ status: "interrupted" }, { status: "skipped" }],
+    });
+    expect(store.run(daily.id)?.status).toBe("interrupted");
+    expect(() => runner.trigger("daily", "manual")).toThrow("the runner is stopping");
+  });
+
+  it("reports every repo check", async () => {
+    const { runner, events } = setup({ copy: { steps: [{ type: "copy", from: "a", to: "b" }] } });
+    runner.trigger("copy", "manual");
+    await runner.idle();
+    const repos = events.flatMap((e) => (e.kind === "repo" ? [[e.repo, e.result.ok]] : []));
+    expect(repos.sort()).toEqual([["a", true], ["b", true]]);
+  });
+
+  it("marks runs and steps left unfinished as interrupted", () => {
+    const left = store.insertRun({ cascade: "c", trigger: "schedule", status: "queued", startedAt: 1 });
+    store.saveStep({ runId: left.id, index: 0, type: "check", label: "check a", status: "running" });
+    const done = store.insertRun({ cascade: "c", trigger: "schedule", status: "success", startedAt: 1, finishedAt: 2 });
+    expect(store.markInterrupted(10)).toBe(1);
+    expect(store.run(left.id)).toMatchObject({ status: "interrupted", finishedAt: 10, steps: [{ status: "interrupted" }] });
+    expect(store.run(done.id)?.status).toBe("success");
+  });
+});
+
+describe("warm-up", () => {
+  const ctx = () => ({ binary: FAKE_RESTIC, env: fake.env(), killGraceMs: 500 });
+
+  it("initializes missing repos, sources first, and reports chunker mismatches", async () => {
+    fake.writeRepo("/r/a", "pw-a", "aaaa");
+    const config = baseConfig();
+    // c claims to be created from a, but already exists with other chunker parameters
+    config.repos.c = { ...config.repos.c!, from: "a" };
+    fake.writeRepo("/r/c", "pw-c", "cccc");
+    const lines: string[] = [];
+    const r = await warmUp(config, ctx(), (repo, line) => lines.push(`${repo}: ${line}`));
+    expect([...r.results.keys()]).toEqual(["a", "b", "c"]);
+    expect([...r.results.values()].every((x) => x.ok)).toBe(true);
+    expect(fake.readRepo("sftp:host:/r/b")?.chunker_polynomial).toBe("aaaa");
+    expect(lines).toContain('b: repo "b" does not exist, initializing it with the chunker parameters of "a"');
+    expect(r.fatal).toEqual([]);
+    expect(r.mismatches).toEqual([
+      'repo "c" was created from "a" but its chunker parameters differ (cccc vs aaaa); copied data will not deduplicate',
+    ]);
+  });
+
+  it("treats a wrong password as fatal and an unreachable repo as not", async () => {
+    fake.writeRepo("/r/a", "other");
+    const r = await warmUp(baseConfig(), { ...ctx(), env: fake.env({ FAKE_RESTIC_UNREACHABLE: "/r/c" }) }, () => {});
+    expect(r.fatal).toEqual(['repo "a": wrong password for repo "a"', 'repo "b": cannot initialize repo "b" from "a": wrong password for repo "a"']);
+    expect(r.results.get("c")).toMatchObject({ ok: false, problem: "unreachable" });
   });
 });

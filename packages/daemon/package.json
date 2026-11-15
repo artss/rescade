@@ -1,0 +1,25 @@
+{
+  "name": "@rescade/daemon",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "rescaded": "./dist/index.js"
+  },
+  "main": "./dist/daemon.js",
+  "types": "./dist/daemon.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/daemon.d.ts",
+      "default": "./dist/daemon.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@rescade/core": "workspace:*",
+    "fastify": "^5.12.8",
+    "pino": "^10.4.0"
+  }
+}
