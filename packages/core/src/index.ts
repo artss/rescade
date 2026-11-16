@@ -25,5 +25,7 @@ export { MAX_LOCK_DETAILS, STALE_LOCK_MS } from "./restic/lockfiles.js";
 export type { RepoLockList, ResticLock } from "./restic/lockfiles.js";
 export { DEFAULT_REPO_CHECK_TIMEOUT_MS, EXIT, resticCommand } from "./restic/restic.js";
 export type { ResticContext } from "./restic/restic.js";
+export { checkResticVersion, MIN_RESTIC_VERSION, parseResticVersion } from "./restic/version.js";
+export type { ResticVersion } from "./restic/version.js";
 export { runProcess, DEFAULT_KILL_GRACE_MS } from "./restic/process.js";
 export type { ProcessOptions, ProcessResult } from "./restic/process.js";

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
 import {
+  checkResticVersion,
   formatDiagnostic,
   formatDuration,
   loadConfig,
@@ -166,6 +167,10 @@ async function run(argv: string[]): Promise<number> {
     return 1;
   }
 
+  const restic = values.restic ?? process.env.RESCADE_RESTIC ?? "restic";
+  const version = await checkResticVersion(restic, process.env);
+  if (version.warning !== undefined) console.error(`rescade: warning: ${version.warning}`);
+
   // first Ctrl+C: SIGTERM to the running step and wait; second: leave at once
   const ac = new AbortController();
   const onSignal = () => {
@@ -193,7 +198,7 @@ async function run(argv: string[]): Promise<number> {
   };
 
   const result = await runCascade(loaded.config, cascadeName, {
-    restic: values.restic ?? process.env.RESCADE_RESTIC ?? "restic",
+    restic,
     env: process.env,
     signal: ac.signal,
     repoCheckTimeoutMs,

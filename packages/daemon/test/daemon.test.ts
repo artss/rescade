@@ -114,6 +114,19 @@ describe("startup", () => {
     expect(logs.some((l) => l.msg === "rescade daemon started")).toBe(true);
   });
 
+  it("logs the restic version and warns, but starts, when restic is too old", async () => {
+    await start();
+    expect(logs).toContainEqual(expect.objectContaining({ level: 30, msg: "restic found", version: "0.18.0" }));
+    await daemon!.stop();
+    daemon = undefined;
+    logs = [];
+
+    await start(configYaml(), { FAKE_RESTIC_VERSION: "0.16.4" });
+    const warning = logs.find((l) => l.level === 40 && String(l.msg).includes("older than 0.17.0"));
+    expect(warning).toMatchObject({ restic: FAKE_RESTIC, version: "0.16.4" });
+    expect(logs.some((l) => l.msg === "rescade daemon started")).toBe(true);
+  });
+
   it("refuses to start when a reachable repo has a wrong password", async () => {
     fake.writeRepo("/r/a", "other");
     await expect(start()).rejects.toThrow(StartupError);

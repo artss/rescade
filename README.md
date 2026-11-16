@@ -4,7 +4,8 @@ Cascades of restic commands on a schedule, described in YAML. The daemon `rescad
 schedule, keeps the history in SQLite and serves an HTTP API; the `rescade` command talks to it, and
 can also validate a config or run a cascade on its own. A web interface comes later.
 
-Requires Node >= 22.13 (for the built-in `node:sqlite`) and restic >= 0.17.
+Requires Node >= 22.13 (for the built-in `node:sqlite`) and restic >= 0.17 (`rescaded` and `rescade run --local`
+warn about an older one: it does not report a missing repo or a wrong password with their own exit codes).
 
 ## Try it
 

@@ -15,7 +15,8 @@
 через `AbortSignal`), мьютексы репо (`src/run/locks.ts`, берутся вокруг шага через `RunOptions.lock`),
 оркестратор (`src/run/runner.ts`: `on-busy`, без самоналожения каскада, статусы `queued`/`running`, запись в хранилище,
 события), планировщик (`src/schedule.ts`, croner), хранилище (`src/store/store.ts`, `node:sqlite`).
-Прогрев репо при старте (`src/restic/warmup.ts`), чтение токена (`src/token.ts`).
+Прогрев репо при старте (`src/restic/warmup.ts`), проверка версии restic (`src/restic/version.ts`, предупреждение
+в `rescaded` и `run --local`), чтение токена (`src/token.ts`).
 `packages/daemon`: `rescaded` (`settings.ts` флаги/env/токен/Host, `server.ts` Fastify-маршруты и SSE, `daemon.ts` запуск,
 SIGHUP, остановка с `interrupted`, чистка истории раз в час, `repos.ts` состояние репо в памяти, `schemas.ts` схемы
 ответов для сериализации и `GET /api/openapi.json` и Swagger UI на `/api/docs` без токена; копия в `docs/openapi.json`;
@@ -26,7 +27,7 @@ API под `/api`, остальные пути отдают собранный �
 `sse.ts` поток событий через fetch, `queries.ts` хуки и `applyEvent`, `log.ts` склейка лога по `id`, `pages/*`), демон
 находит его сборку через `import.meta.resolve("@rescade/web/package.json")`.
 Бэкенды restic (`src/config/backends.ts`: префикс `path`, опции по бэкенду, конфликты `env`/`options` в парах
-`copy`/`from`; описание в `docs/backends.md`). 194 теста vitest (проекты `node` и `web`), фейковый restic в `packages/core/test/fake-restic.mjs`, 7 интеграционных с настоящим restic
+`copy`/`from`; описание в `docs/backends.md`). 201 тест vitest (проекты `node` и `web`), фейковый restic в `packages/core/test/fake-restic.mjs`, 7 интеграционных с настоящим restic
 (проверено на 0.19.1), пример в `examples/config`.
 
 Шаги 1–7 из DESIGN.md сделаны. Шаг 8: `Dockerfile`, `.github/workflows/ci.yaml` (тесты, затем образ
@@ -77,8 +78,8 @@ SIGHUP, `interrupted` после `docker stop` и после `kill -9`).
 - Неквотированный `**/venv` в YAML читается как alias (`yaml` бросает `ReferenceError` при `toJS()`), поэтому алиасы
   проверяются заранее через `visit`. В `{}` и `[]` ссылка `${VAR}` требует кавычек.
 - `true`, `123` в списке `command` YAML читает как boolean и число; сообщение об ошибке подсказывает про кавычки.
-- Нужен restic >= 0.17: только с него «репо нет» = код 10 и «неверный пароль» = код 12. На старом restic отсутствующий
-  репо даёт код 1 и считается `unreachable`, то есть init не произойдёт (безопасно, но молча не работает).
+- Нужен restic >= 0.17 (о старом предупреждают `rescaded` и `run --local`; в Ubuntu 24.04 из apt 0.16.4): только
+  с него «репо нет» = код 10 и «неверный пароль» = код 12. На старом restic отсутствующий репо даёт код 1 и считается `unreachable`, то есть init не произойдёт (безопасно, но молча не работает).
 - С `--json` ошибки restic в stderr тоже JSON, последняя строка `{"message_type":"exit_error",...}`; для лога и причины
   отказа они переводятся в текст (`readableBackupLine`).
 - Недоступный REST/S3-бэкенд restic ретраит минутами (`cat config` на закрытый порт не закончился за 2 минуты),

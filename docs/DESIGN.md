@@ -73,6 +73,8 @@ Fastify (+ `@fastify/swagger`: OpenAPI по схемам маршрутов, `@f
   репо (для `copy` сначала источника, потом цели); `options` репо идут как `-o key=value`. Источник для `copy` и
   `init --copy-chunker-params` передаётся через `RESTIC_FROM_REPOSITORY`/`RESTIC_FROM_PASSWORD`.
 - Требуется restic >= 0.17 (коды выхода 10 и 12). Любой другой ненулевой код `cat config` = `unreachable`.
+  `rescaded` при старте и `rescade run --local` перед запуском читают `restic version`: старше 0.17, не запустился
+  или версия не разобралась = предупреждение (в лог демона, в stderr CLI), не ошибка.
 - `cat config` ограничен таймаутом (`RESCADE_REPO_CHECK_TIMEOUT`, по умолчанию 2m): недоступный REST/S3 restic
   ретраит минутами. Истёк = `unreachable`, init не делается. У backup/prune/copy/check таймаута нет.
 - Коды выхода `rescade run`: 0 success, 3 warning, 1 failed или interrupted, 130 cancelled, 75 skipped (репо заняты или

@@ -13,6 +13,7 @@
 //   FAKE_RESTIC_UNREACHABLE=a,b  repository paths that fail like an unreachable host (exit 1)
 //   FAKE_RESTIC_HANG=<cmd>       hang in <cmd> until signalled; SIGTERM exits with 130
 //   FAKE_RESTIC_IGNORE_TERM=1    ignore SIGTERM while hanging (only SIGKILL helps)
+//   FAKE_RESTIC_VERSION=x.y.z    version `restic version` reports (default 0.18.0)
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -35,6 +36,12 @@ for (let i = 0; i < argv.length; i++) {
 const [cmd, ...args] = rest;
 const repoPath = env.RESTIC_REPOSITORY;
 const fromPath = env.RESTIC_FROM_REPOSITORY;
+
+// not logged: rescaded and run --local ask for the version before anything else
+if (cmd === "version") {
+  console.log(`restic ${env.FAKE_RESTIC_VERSION ?? "0.18.0"} compiled with go1.24.0 on linux/amd64 (fake)`);
+  process.exit(0);
+}
 
 fs.appendFileSync(
   path.join(state, "calls.jsonl"),
@@ -67,10 +74,6 @@ function open(p, password) {
   return repo;
 }
 
-if (cmd === "version") {
-  console.log("restic 0.18.0 (fake)");
-  process.exit(0);
-}
 if (!repoPath) fatal(1, "Please specify repository location (-r or --repository-file)");
 
 // opening errors come first, like in real restic
