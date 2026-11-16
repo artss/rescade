@@ -19,8 +19,8 @@ export interface Settings {
   /** Finished runs older than this lose their log lines. */
   logRetentionMs?: number;
   token: string;
-  /** RESCADE_ALLOWED_HOSTS: Host header values accepted besides loopback and the listen address. */
-  extraHosts: string[];
+  /** RESCADE_ALLOWED_HOSTS: Host header values accepted besides loopback and the listen address; undefined = any. */
+  extraHosts: string[] | undefined;
   /** Origins that may call the API from a browser. */
   corsOrigins: Set<string>;
   logLevel: string;
@@ -47,8 +47,9 @@ Environment:
   RESCADE_HISTORY_RETENTION    how long to keep finished runs, e.g. "90d" (default ${DEFAULT_HISTORY_RETENTION}, 0 = forever)
   RESCADE_LOG_RETENTION        how long to keep the log lines of finished runs (default ${DEFAULT_LOG_RETENTION},
                                0 = as long as the run); the latest run of each cascade is always kept
-  RESCADE_ALLOWED_HOSTS        extra values of the Host header to accept, comma-separated,
-                               "host" or "host:port" (needed when listening on a public address)
+  RESCADE_ALLOWED_HOSTS        values of the Host header to accept besides loopback and the listen address,
+                               comma-separated: "host:port" only on that port, "host" on any port;
+                               unset or empty = any host
   RESCADE_CORS_ORIGINS         origins allowed to call the API from a browser, comma-separated
 
 Signals: SIGHUP reloads the config, SIGTERM stops (runs in progress end as interrupted).
@@ -114,7 +115,7 @@ export async function readSettings(
     historyRetentionMs: durationVar("RESCADE_HISTORY_RETENTION", DEFAULT_HISTORY_RETENTION),
     logRetentionMs: durationVar("RESCADE_LOG_RETENTION", DEFAULT_LOG_RETENTION),
     token: await readToken(values["token-file"], env, warn),
-    extraHosts: list(env.RESCADE_ALLOWED_HOSTS),
+    extraHosts: optionalList(env.RESCADE_ALLOWED_HOSTS),
     corsOrigins: new Set(list(env.RESCADE_CORS_ORIGINS)),
     logLevel,
   };
@@ -151,6 +152,11 @@ async function readToken(
   }
 }
 
+function optionalList(value: string | undefined): string[] | undefined {
+  const items = list(value);
+  return items.length > 0 ? items : undefined;
+}
+
 function list(value: string | undefined): string[] {
   return (value ?? "")
     .split(",")
@@ -158,10 +164,27 @@ function list(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
-/** Loopback names and the listen address on our port, plus RESCADE_ALLOWED_HOSTS (without a port: ours). */
+const HOST_PORT = /^(\[[^\]]+\]|[^:]+)(?::(\d+))?$/;
+
+/**
+ * Loopback names and the listen address on our port, plus RESCADE_ALLOWED_HOSTS: "host:port" as is,
+ * a bare "host" for any port (see `hostAllowed`).
+ */
 export function allowedHosts(host: string, port: number, extra: string[]): Set<string> {
   const bracket = (h: string) => (h.includes(":") && !h.startsWith("[") ? `[${h}]` : h);
   const names = ["localhost", "127.0.0.1", "[::1]", bracket(host)].map((h) => `${h}:${port}`);
-  for (const e of extra) names.push(/^(\[[^\]]+\]|[^:]+):\d+$/.test(e) ? e : `${bracket(e)}:${port}`);
+  // what does not parse as a name with an optional port is a bare IPv6 address
+  for (const e of extra) names.push(HOST_PORT.test(e) ? e : `[${e}]`);
   return new Set(names.map((n) => n.toLowerCase()));
+}
+
+/**
+ * Whether a Host header is in `allowed`: as is, or by its name alone when the name is allowed on any port.
+ * A header without a port (a proxy on 80/443) matches only such names.
+ */
+export function hostAllowed(allowed: Set<string>, header: string): boolean {
+  const h = header.toLowerCase();
+  if (allowed.has(h)) return true;
+  const name = HOST_PORT.exec(h)?.[1];
+  return name !== undefined && allowed.has(name);
 }

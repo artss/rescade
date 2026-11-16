@@ -32,7 +32,7 @@ Settings come from flags or the environment, never from the YAML: `--addr` / `RE
 `--config-dir` / `RESCADE_CONFIG_DIR`, `--data-dir` / `RESCADE_DATA_DIR`, `--restic` / `RESCADE_RESTIC`,
 `--token-file` / `RESCADE_TOKEN_FILE` (or the token itself in `RESCADE_TOKEN`), `--log-level` /
 `RESCADE_LOG_LEVEL`, `RESCADE_REPO_CHECK_TIMEOUT` (default `2m`), `RESCADE_ALLOWED_HOSTS` (Host header
-values to accept when listening on a public address), `RESCADE_CORS_ORIGINS`. See `rescaded --help`.
+values to accept: `host:port` on that port, `host` on any; unset = any host), `RESCADE_CORS_ORIGINS`. See `rescaded --help`.
 
 The API lives under `/api` and needs `Authorization: Bearer <token>` on every request:
 `GET /api/status`, `GET /api/cascades`, `GET /api/runs?cascade=&limit=&before=`, `GET /api/runs/:id`,

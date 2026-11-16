@@ -2,7 +2,7 @@ import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { allowedHosts, parseAddr, readSettings, SettingsError } from "../src/settings.js";
+import { allowedHosts, hostAllowed, parseAddr, readSettings, SettingsError } from "../src/settings.js";
 
 let dir: string;
 beforeEach(async () => {
@@ -38,7 +38,7 @@ describe("daemon settings", () => {
       historyRetentionMs: 180 * 86_400_000,
       logRetentionMs: 30 * 86_400_000,
       logLevel: "info",
-      extraHosts: [],
+      extraHosts: undefined,
     });
     expect(s !== "help" && [...s.corsOrigins]).toEqual(["https://a", "https://b"]);
     expect(warnings).toEqual([]);
@@ -84,16 +84,49 @@ describe("daemon settings", () => {
     expect(() => parseAddr("::1:80")).toThrow(SettingsError);
   });
 
+  it("reads the allowed hosts, unset or empty meaning any", async () => {
+    const hosts = async (value?: string) => {
+      const env: Record<string, string> = { RESCADE_TOKEN: "t" };
+      if (value !== undefined) env.RESCADE_ALLOWED_HOSTS = value;
+      const s = await readSettings([], env, () => {});
+      return s !== "help" && s.extraHosts;
+    };
+    expect(await hosts()).toBeUndefined();
+    expect(await hosts("")).toBeUndefined();
+    expect(await hosts(" , ")).toBeUndefined();
+    expect(await hosts("a.lan, b.lan:443")).toEqual(["a.lan", "b.lan:443"]);
+  });
+
   it("accepts loopback names, the listen address and extra hosts", () => {
-    expect([...allowedHosts("0.0.0.0", 8765, ["backup.lan", "Proxy.Lan:443", "fe80::1"])]).toEqual([
+    expect([...allowedHosts("0.0.0.0", 8765, ["backup.lan", "Proxy.Lan:443", "fe80::1", "[fe80::2]:80"])]).toEqual([
       "localhost:8765",
       "127.0.0.1:8765",
       "[::1]:8765",
       "0.0.0.0:8765",
-      "backup.lan:8765",
+      "backup.lan",
       "proxy.lan:443",
-      "[fe80::1]:8765",
+      "[fe80::1]",
+      "[fe80::2]:80",
     ]);
     expect(allowedHosts("::1", 1, []).has("[::1]:1")).toBe(true);
   });
+
+  it("matches a Host header on the given port, or on any port for a bare name", () => {
+    const allowed = allowedHosts("127.0.0.1", 8765, ["backup.lan", "proxy.lan:443", "fe80::1"]);
+    const ok = (h: string) => hostAllowed(allowed, h);
+    expect(ok("127.0.0.1:8765")).toBe(true);
+    expect(ok("127.0.0.1:80")).toBe(false);
+    expect(ok("127.0.0.1")).toBe(false);
+    expect(ok("Backup.LAN")).toBe(true);
+    expect(ok("backup.lan:8765")).toBe(true);
+    expect(ok("backup.lan:443")).toBe(true);
+    expect(ok("proxy.lan:443")).toBe(true);
+    expect(ok("proxy.lan:8765")).toBe(false);
+    expect(ok("proxy.lan")).toBe(false);
+    expect(ok("[fe80::1]")).toBe(true);
+    expect(ok("[fe80::1]:9")).toBe(true);
+    expect(ok("evil.example")).toBe(false);
+    expect(ok("")).toBe(false);
+  });
+
 });

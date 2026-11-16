@@ -21,6 +21,7 @@ import {
 import { stepView } from "./cascades.js";
 import type { RepoStates } from "./repos.js";
 import { arrayOf, ref, schemas } from "./schemas.js";
+import { hostAllowed } from "./settings.js";
 
 /** What `GET /status` shows about the daemon itself. */
 export interface DaemonStatus {
@@ -44,8 +45,8 @@ export interface ServerDeps {
   /** How to run restic for browsing snapshots; the repos come from the current config. */
   restic: Pick<ResticContext, "binary" | "env" | "killGraceMs" | "repoCheckTimeoutMs">;
   token: string;
-  /** Host header values to accept, lower case; may be filled in after the server starts listening. */
-  allowedHosts: Set<string>;
+  /** Host header values to accept (see `allowedHosts`); may be filled in after the server starts listening. Undefined = any. */
+  allowedHosts: Set<string> | undefined;
   corsOrigins: Set<string>;
   logger: FastifyBaseLogger;
   /** Interval of SSE keep-alive comments. */
@@ -151,7 +152,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   const expected = digest(deps.token);
   app.addHook("onRequest", async (request, reply) => {
     const host = (request.headers.host ?? "").toLowerCase();
-    if (!deps.allowedHosts.has(host)) return reply.code(403).send({ error: `host "${host}" is not allowed` });
+    if (deps.allowedHosts && !hostAllowed(deps.allowedHosts, host)) return reply.code(403).send({ error: `host "${host}" is not allowed` });
 
     const origin = request.headers.origin;
     if (origin !== undefined && deps.corsOrigins.has(origin)) {
