@@ -58,7 +58,9 @@ describe("cascades and runs", () => {
 
   it("lists runs of a cascade and opens one", async () => {
     const run = await api<RunRecord>("POST", "/cascades/daily/run");
-    renderApp("/runs?cascade=daily");
+    renderApp("/");
+    fireEvent.click(await screen.findByRole("link", { name: "daily" }, wait));
+    expect(location.pathname + location.search).toBe("/runs?cascade=daily");
     const link = await screen.findByRole("link", { name: String(run.id) }, wait);
     expect((screen.getByLabelText("Cascade") as HTMLSelectElement).value).toBe("daily");
     fireEvent.click(link);
