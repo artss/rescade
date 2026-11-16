@@ -1,30 +1,51 @@
 import { Link, useSearch } from "wouter";
 import { formatBytes } from "../format.js";
-import { useSnapshotDir, useSnapshots } from "../queries.js";
+import { useRepos, useSnapshotDir, useSnapshots } from "../queries.js";
 import type { SnapshotEntry } from "../types.js";
 import { Card } from "../components/Card.js";
 import { ErrorBox } from "../components/ErrorBox.js";
 import { Loading } from "../components/Loading.js";
+import { RepoCard, repoHref, StaleLocksNote } from "../components/RepoCard.js";
 import { Time } from "../components/Time.js";
 import { td, th } from "../components/table.js";
 
 const link = "text-sky-700 hover:underline dark:text-sky-400";
 
-export const snapshotsHref = (repo: string) => `/repos/${encodeURIComponent(repo)}/snapshots`;
 export const snapshotHref = (repo: string, id: string, path?: string) =>
-  `${snapshotsHref(repo)}/${encodeURIComponent(id)}${path === undefined || path === "/" ? "" : `?${new URLSearchParams({ path })}`}`;
+  `${repoHref(repo)}/snapshots/${encodeURIComponent(id)}${path === undefined || path === "/" ? "" : `?${new URLSearchParams({ path })}`}`;
 
-/** The snapshots of a repo, newest first. */
-export function SnapshotsPage({ repo }: { repo: string }) {
-  const { data, error } = useSnapshots(repo);
+/** A repo: its state and its snapshots. */
+export function RepoPage({ repo }: { repo: string }) {
+  const repos = useRepos();
+  const view = repos.data?.find((r) => r.name === repo);
   return (
     <div className="space-y-4">
       <h1 className="text-lg font-semibold">
         <Link href="/repos" className={link}>
           Repos
         </Link>{" "}
-        / {repo} / snapshots
+        / {repo}
       </h1>
+      {repos.error && <ErrorBox error={repos.error} />}
+      {!repos.data && !repos.error && <Loading />}
+      {repos.data && !view && <p className="text-sm text-zinc-500">No such repo.</p>}
+      {view && (
+        <>
+          <RepoCard repo={view} detailed />
+          <StaleLocksNote repos={[view]} />
+          <h2 className="font-semibold">Snapshots</h2>
+          <Snapshots repo={repo} />
+        </>
+      )}
+    </div>
+  );
+}
+
+/** The snapshots of a repo, newest first. */
+function Snapshots({ repo }: { repo: string }) {
+  const { data, error } = useSnapshots(repo);
+  return (
+    <>
       {error && <ErrorBox error={error} />}
       {!data && !error && <Loading />}
       {data && (
@@ -62,7 +83,7 @@ export function SnapshotsPage({ repo }: { repo: string }) {
           {data.length === 0 && <p className="px-3 py-4 text-sm text-zinc-500">No snapshots yet.</p>}
         </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -79,7 +100,7 @@ export function SnapshotPage({ repo, id }: { repo: string; id: string }) {
           Repos
         </Link>{" "}
         /{" "}
-        <Link href={snapshotsHref(repo)} className={link}>
+        <Link href={repoHref(repo)} className={link}>
           {repo}
         </Link>{" "}
         / <span className="font-mono">{data?.snapshot.shortId ?? id.slice(0, 8)}</span>

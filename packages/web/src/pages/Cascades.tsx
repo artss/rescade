@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { formatDuration } from "../format.js";
 import { useCascades, useStartRun } from "../queries.js";
 import { stepDetails } from "../steps.js";
@@ -42,7 +42,11 @@ function CascadeCard({ cascade: c }: { cascade: CascadeView }) {
     <Card>
       <div className="flex items-start gap-4">
         <div className="min-w-0 flex-1">
-          <h2 className="font-semibold">{c.name}</h2>
+          <h2 className="font-semibold">
+            <Link href={`/runs?${new URLSearchParams({ cascade: c.name })}`} className="text-sky-700 hover:underline dark:text-sky-400">
+              {c.name}
+            </Link>
+          </h2>
           {c.description && <p className="text-sm text-zinc-500">{c.description}</p>}
         </div>
         <Button onClick={run} disabled={start.isPending || c.active !== null} aria-label={`Run ${c.name}`}>
