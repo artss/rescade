@@ -81,6 +81,54 @@ const LogLine = {
   required: ["id", "step", "ts", "stream", "line"],
 } as const;
 
+const strings = { type: "array", items: { type: "string" } } as const;
+
+const Retention = {
+  $id: "Retention",
+  type: "object",
+  description: "The repo's `retention`: how many snapshots `restic forget` keeps",
+  properties: {
+    last: { type: "integer" },
+    hourly: { type: "integer" },
+    daily: { type: "integer" },
+    weekly: { type: "integer" },
+    monthly: { type: "integer" },
+    yearly: { type: "integer" },
+    within: { type: "string", description: 'restic duration such as "2y6m"' },
+  },
+} as const;
+
+const CascadeStep = {
+  $id: "CascadeStep",
+  type: "object",
+  description: "A step of the config. `type`, `label` and `name` are always there, the rest depends on `type`.",
+  properties: {
+    type: stepType,
+    label: { type: "string", description: "`name`, or a summary of the step" },
+    name: { type: ["string", "null"] },
+    set: { type: "string", description: "backup" },
+    repo: { type: "string", description: "backup, retain, prune, check" },
+    include: { ...strings, description: "backup: paths of the set" },
+    exclude: { ...strings, description: "backup: exclude patterns of the set" },
+    tags: { ...strings, description: "backup: tags of the set and of the step" },
+    oneFileSystem: { type: "boolean", description: "backup" },
+    excludeCaches: { type: "boolean", description: "backup" },
+    retention: { ...nullable("Retention"), description: "retain: the policy of the repo" },
+    maxUnused: { type: ["string", "null"], description: "prune" },
+    readDataSubset: { type: ["string", "null"], description: "check" },
+    from: { type: "string", description: "copy" },
+    to: { type: "string", description: "copy" },
+    shell: { type: "boolean", description: "run" },
+    command: { type: "string", description: "run with `shell: true`: the script" },
+    argv: { ...strings, description: "run with `shell: false`: the program and its arguments" },
+    cwd: { type: ["string", "null"], description: "run" },
+    env: { ...strings, description: "run: names of the variables it sets, without values" },
+    timeoutMs: { type: "integer", description: "run" },
+    lock: { ...strings, description: "run: repos whose mutex it holds" },
+  },
+  required: ["type", "label", "name"],
+} as const;
+
 const Cascade = {
   $id: "Cascade",
   type: "object",
@@ -91,14 +139,7 @@ const Cascade = {
     timezone: { type: ["string", "null"] },
     onBusy: { type: "string", enum: ["skip", "wait"] },
     waitTimeoutMs: { type: ["integer", "null"] },
-    steps: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: { type: stepType, label: { type: "string" } },
-        required: ["type", "label"],
-      },
-    },
+    steps: { type: "array", items: { $ref: "CascadeStep#" } },
     nextRun: { type: ["integer", "null"], description: "Epoch milliseconds of the next scheduled run" },
     active: nullable("Run"),
     lastRun: nullable("Run"),
@@ -313,6 +354,8 @@ export const schemas = [
   Step,
   RunWithSteps,
   LogLine,
+  Retention,
+  CascadeStep,
   Cascade,
   LockOwner,
   ResticLock,

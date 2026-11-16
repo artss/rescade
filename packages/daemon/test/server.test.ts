@@ -4,7 +4,7 @@ import path from "node:path";
 import type { FastifyInstance } from "fastify";
 import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { loadConfig, type Config, type LogRecord, type RunRecord, type StepRecord } from "@rescade/core";
+import { DEFAULT_RUN_TIMEOUT_MS, loadConfig, type Config, type LogRecord, type RunRecord, type StepRecord } from "@rescade/core";
 import { RepoStates } from "../src/repos.js";
 import { FAKE_RESTIC, FakeState } from "../../core/test/helpers/fake.js";
 import { buildServer, DOCS_PATH, HEALTH_PATH, OPENAPI_PATH, type DaemonStatus, type ServerDeps } from "../src/server.js";
@@ -69,10 +69,16 @@ beforeAll(async () => {
     file,
     `
 repos:
-  a: { path: "rest:https://user:secret@host/a", password: pw }
+  a: { path: "rest:https://user:secret@host/a", password: pw, retention: { daily: 7, within: 1m } }
   b: { path: /r/b, password: pw, from: a }
 sets:
   home: { include: [/home] }
+  docs:
+    include: [/srv/docs, /srv/wiki]
+    exclude: ["**/.cache"]
+    tags: [docs, srv]
+    one-file-system: true
+    exclude-caches: true
 cascades:
   daily:
     description: Home to a
@@ -82,6 +88,16 @@ cascades:
     wait-timeout: 10m
     steps:
       - backup: { set: home, repo: a }
+  full:
+    steps:
+      - name: dump
+        run: { command: [/bin/dump, --all], cwd: /tmp, env: { PGPASSWORD: hunter2 }, timeout: 5m, lock: [a] }
+      - run: { command: "echo done", shell: true }
+      - backup: { set: docs, repo: b, tags: [srv, nightly] }
+      - retain: { repo: a }
+      - prune: { repo: a, max-unused: 5% }
+      - check: { repo: a, read-data-subset: 1/10 }
+      - copy: { from: a, to: b }
 `,
   );
   const loaded = await loadConfig({ path: file });
@@ -171,6 +187,51 @@ describe("response schemas", () => {
       { location: "rest:https://user:***@host/a", locks: { count: 11, error: "partly read" } },
       { state: "unreachable", lockedBy: { runId: 7 } },
     ]);
+  });
+
+  it("shows the settings of every step, env without values", async () => {
+    const full = (await call("GET", "/api/cascades")).body.find((c: { name: string }) => c.name === "full");
+    expect(full.steps).toEqual([
+      {
+        type: "run",
+        label: "dump",
+        name: "dump",
+        shell: false,
+        argv: ["/bin/dump", "--all"],
+        cwd: "/tmp",
+        env: ["PGPASSWORD"],
+        timeoutMs: 300_000,
+        lock: ["a"],
+      },
+      {
+        type: "run",
+        label: "run echo done",
+        name: null,
+        shell: true,
+        command: "echo done",
+        cwd: null,
+        env: [],
+        timeoutMs: DEFAULT_RUN_TIMEOUT_MS,
+        lock: [],
+      },
+      {
+        type: "backup",
+        label: "backup docs -> b",
+        name: null,
+        set: "docs",
+        repo: "b",
+        include: ["/srv/docs", "/srv/wiki"],
+        exclude: ["**/.cache"],
+        tags: ["docs", "srv", "nightly"],
+        oneFileSystem: true,
+        excludeCaches: true,
+      },
+      { type: "retain", label: "retain a", name: null, repo: "a", retention: { daily: 7, within: "1m" } },
+      { type: "prune", label: "prune a", name: null, repo: "a", maxUnused: "5%" },
+      { type: "check", label: "check a", name: null, repo: "a", readDataSubset: "1/10" },
+      { type: "copy", label: "copy a -> b", name: null, from: "a", to: "b" },
+    ]);
+    expect(JSON.stringify(full)).not.toContain("hunter2");
   });
 });
 
