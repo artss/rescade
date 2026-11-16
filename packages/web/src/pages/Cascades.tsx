@@ -2,7 +2,8 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import { formatDuration } from "../format.js";
 import { useCascades, useStartRun } from "../queries.js";
-import type { CascadeView } from "../types.js";
+import { stepDetails } from "../steps.js";
+import type { CascadeStep, CascadeView } from "../types.js";
 import { Badge } from "../components/Badge.js";
 import { Button } from "../components/Button.js";
 import { Card } from "../components/Card.js";
@@ -84,13 +85,32 @@ function CascadeCard({ cascade: c }: { cascade: CascadeView }) {
         )}
       </dl>
 
-      <ol className="mt-3 flex flex-wrap gap-1.5">
+      <ol className="mt-3 grid gap-1.5" aria-label={`Steps of ${c.name}`}>
         {c.steps.map((s, i) => (
-          <li key={i} className="rounded bg-zinc-100 px-2 py-0.5 font-mono text-xs dark:bg-zinc-800">
-            {i + 1}. {s.label}
-          </li>
+          <StepItem key={i} index={i} step={s} />
         ))}
       </ol>
     </Card>
+  );
+}
+
+function StepItem({ index, step }: { index: number; step: CascadeStep }) {
+  const details = stepDetails(step);
+  return (
+    <li className="rounded bg-zinc-100 px-2 py-1 text-xs dark:bg-zinc-800">
+      <span className="font-mono">
+        {index + 1}. {step.label}
+      </span>
+      {details.length > 0 && (
+        <dl className="mt-0.5 grid grid-cols-[auto_1fr] gap-x-3 pl-4">
+          {details.map(([term, value]) => (
+            <div key={term} className="contents">
+              <dt className="text-zinc-500">{term}</dt>
+              <dd className="break-all font-mono">{value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </li>
   );
 }

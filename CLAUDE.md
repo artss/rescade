@@ -29,7 +29,7 @@ API под `/api`, остальные пути отдают собранный �
 Просмотр снапшотов (`src/restic/snapshots.ts`: `restic snapshots`/`ls` без мьютекса, `--retry-lock 10s`; маршруты
 `/api/repos/:name/snapshots[/:id/ls]`, CLI `snapshots` и `ls`, страницы `pages/Snapshots.tsx`; у шага backup поле
 `repo`, схема базы v2 с миграцией в `Store.open`). Бэкенды restic (`src/config/backends.ts`: префикс `path`, опции по бэкенду, конфликты `env`/`options` в парах
-`copy`/`from`; описание в `docs/backends.md`). 227 тестов vitest (проекты `node` и `web`), фейковый restic в `packages/core/test/fake-restic.mjs`, 8 интеграционных с настоящим restic
+`copy`/`from`; описание в `docs/backends.md`). 230 тестов vitest (проекты `node` и `web`), фейковый restic в `packages/core/test/fake-restic.mjs`, 8 интеграционных с настоящим restic
 (проверено на 0.19.1), пример в `examples/config`.
 
 Шаги 1–7 из DESIGN.md сделаны. Шаг 8: `Dockerfile`, `.github/workflows/ci.yaml` (тесты, затем образ

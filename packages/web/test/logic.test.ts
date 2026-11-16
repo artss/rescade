@@ -4,7 +4,8 @@ import { mergeLog, type LogData } from "../src/log.js";
 import { applyEvent, keys } from "../src/queries.js";
 import { parseEvents } from "../src/sse.js";
 import { formatBytes, formatDuration } from "../src/format.js";
-import type { LogRecord, RunWithSteps } from "../src/types.js";
+import { stepDetails } from "../src/steps.js";
+import type { CascadeStep, LogRecord, RunWithSteps } from "../src/types.js";
 
 async function* from(chunks: string[]) {
   for (const c of chunks) yield c;
@@ -104,5 +105,52 @@ describe("formatting", () => {
   it("formats durations and sizes", () => {
     expect([450, 12_400, 185_000, 7_620_000].map(formatDuration)).toEqual(["450ms", "12s", "3m 05s", "2h 07m"]);
     expect([512, 1536, 3.5 * 1024 ** 3].map(formatBytes)).toEqual(["512 B", "1.5 KiB", "3.5 GiB"]);
+  });
+});
+
+describe("stepDetails", () => {
+  it("shows what a backup takes from its set", () => {
+    const step: CascadeStep = {
+      type: "backup",
+      label: "backup docs -> b",
+      name: null,
+      set: "docs",
+      repo: "b",
+      include: ["/srv/docs", "/srv/wiki"],
+      exclude: [],
+      tags: ["docs"],
+      oneFileSystem: true,
+      excludeCaches: false,
+    };
+    expect(stepDetails(step)).toEqual([
+      ["Paths", "/srv/docs, /srv/wiki"],
+      ["Tags", "docs"],
+      ["Options", "one file system"],
+    ]);
+    expect(stepDetails({ ...step, name: "docs" })[0]).toEqual(["To", "docs -> b"]);
+  });
+
+  it("shows the retention and the settings of a run step", () => {
+    expect(
+      stepDetails({ type: "retain", label: "retain a", name: null, repo: "a", retention: { daily: 7, weekly: 4, within: "1y" } }),
+    ).toEqual([["Keep", "7 daily, 4 weekly, within 1y"]]);
+    expect(stepDetails({ type: "copy", label: "copy a -> b", name: null, from: "a", to: "b" })).toEqual([]);
+    expect(
+      stepDetails({
+        type: "run",
+        label: "dump",
+        name: "dump",
+        shell: false,
+        argv: ["/bin/dump", "--all"],
+        cwd: null,
+        env: ["PGPASSWORD"],
+        timeoutMs: 600_000,
+        lock: [],
+      }),
+    ).toEqual([
+      ["Command", "/bin/dump --all"],
+      ["Env", "PGPASSWORD"],
+      ["Timeout", "10m 00s"],
+    ]);
   });
 });
