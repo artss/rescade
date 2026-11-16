@@ -1,6 +1,6 @@
-import type { LogRecord, RepoLockList, RunRecord, StepRecord } from "@rescade/core";
+import type { LogRecord, RepoLockList, RunRecord, Snapshot, SnapshotDir, SnapshotEntry, StepRecord } from "@rescade/core";
 
-export type { LogRecord, RepoLockList, RunRecord, StepRecord };
+export type { LogRecord, RepoLockList, RunRecord, Snapshot, SnapshotDir, SnapshotEntry, StepRecord };
 
 /** `GET /api/runs/:id`. */
 export type RunWithSteps = RunRecord & { steps: StepRecord[] };

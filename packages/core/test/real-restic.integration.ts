@@ -3,7 +3,7 @@ import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises"
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { checkResticVersion, ensureRepo, runCascade, type Cascade, type Config, type RunEvent, type Step } from "../src/index.js";
+import { checkResticVersion, ensureRepo, listDir, listSnapshots, runCascade, type Cascade, type Config, type RunEvent, type Step } from "../src/index.js";
 import { repo } from "./helpers/fake.js";
 
 const RESTIC = process.env.RESCADE_RESTIC ?? "restic";
@@ -99,6 +99,29 @@ describe("with real restic", () => {
     expect(snaps[0]?.tags?.sort()).toEqual(["it", "manual"]);
     expect(snapshots("b")).toHaveLength(1);
     expect(polynomial("b")).toBe(polynomial("a"));
+  });
+
+  it("lists snapshots and browses one a directory at a time", async () => {
+    const { result } = await run([{ type: "backup", set: "s", repo: "c", tags: [] }]);
+    const id = result.steps[0]?.summary?.snapshot_id as string;
+    const ctx = { binary: RESTIC, env, repos: config([]).repos };
+
+    const list = await listSnapshots(ctx, "c");
+    if (!list.ok) throw new Error(list.reason);
+    expect(list.value[0]).toMatchObject({ id, shortId: id.slice(0, 8), paths: [src], tags: ["it"], files: 2 });
+    expect(list.value[0]?.size).toBeGreaterThan(0);
+
+    const top = await listDir(ctx, "c", id.slice(0, 8), src);
+    if (!top.ok) throw new Error(top.reason);
+    expect(top.value.entries.map((e) => [e.name, e.type]).sort()).toEqual([["a.txt", "file"], ["sub", "dir"]]);
+    expect(top.value.entries.find((e) => e.name === "a.txt")).toMatchObject({ size: 6, permissions: expect.stringMatching(/^-rw/) });
+    const sub = await listDir(ctx, "c", id, `${src}/sub/`);
+    expect(sub.ok && sub.value.entries.map((e) => e.path)).toEqual([path.join(src, "sub", "b.txt")]);
+    const root = await listDir(ctx, "c", id, "/");
+    expect(root.ok && root.value.entries.map((e) => e.type)).toEqual(["dir"]);
+
+    expect(await listDir(ctx, "c", id, path.join(src, "nope"))).toMatchObject({ ok: false, problem: "not-found" });
+    expect(await listDir(ctx, "c", "0123456789abcdef", "/")).toMatchObject({ ok: false, problem: "not-found" });
   });
 
   it.skipIf(isRoot)("reports unreadable files as a warning and goes on", async () => {

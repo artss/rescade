@@ -52,6 +52,7 @@ const Step = {
     reason: { type: "string" },
     stderrTail: { type: "array", items: { type: "string" }, description: "Last stderr lines of a failed process" },
     summary: { type: "object", additionalProperties: true, description: "backup: restic's JSON summary" },
+    repo: { type: "string", description: "backup: the repo the snapshot (`summary.snapshot_id`) goes to" },
   },
   required: ["runId", "index", "type", "label", "status"],
 } as const;
@@ -223,6 +224,55 @@ const Status = {
   required: ["version", "startedAt", "config"],
 } as const;
 
+const Snapshot = {
+  $id: "Snapshot",
+  type: "object",
+  properties: {
+    id: { type: "string" },
+    shortId: { type: "string" },
+    time: epochMs,
+    hostname: { type: "string" },
+    username: { type: "string" },
+    paths: { type: "array", items: { type: "string" } },
+    tags: { type: "array", items: { type: "string" } },
+    parent: { type: "string" },
+    size: { type: "integer", description: "Bytes of the files in the snapshot (restic 0.17+)" },
+    files: { type: "integer", description: "Files in the snapshot (restic 0.17+)" },
+    dataAdded: { type: "integer", description: "Bytes the backup added to the repo, before compression (restic 0.17+)" },
+  },
+  required: ["id", "shortId", "time", "hostname", "username", "paths", "tags"],
+} as const;
+
+const SnapshotEntry = {
+  $id: "SnapshotEntry",
+  type: "object",
+  properties: {
+    name: { type: "string" },
+    type: { type: "string", description: "`dir`, `file`, `symlink` and other restic node types" },
+    path: { type: "string" },
+    size: { type: "integer" },
+    mtime: epochMs,
+    permissions: { type: "string", description: "e.g. `drwxr-xr-x`" },
+  },
+  required: ["name", "type", "path"],
+} as const;
+
+const SnapshotDir = {
+  $id: "SnapshotDir",
+  type: "object",
+  properties: {
+    snapshot: { $ref: "Snapshot#" },
+    path: { type: "string", description: "The listed path, normalized" },
+    entries: {
+      type: "array",
+      items: { $ref: "SnapshotEntry#" },
+      description: "What is directly in `path`; for a file, the file itself",
+    },
+    truncated: { type: "boolean", description: "The directory has more than 10000 entries; the rest is left out" },
+  },
+  required: ["snapshot", "path", "entries", "truncated"],
+} as const;
+
 const RunEvent = {
   $id: "RunEvent",
   type: "object",
@@ -270,6 +320,9 @@ export const schemas = [
   Repo,
   RepoCheck,
   Status,
+  Snapshot,
+  SnapshotEntry,
+  SnapshotDir,
   RunEvent,
   StepEvent,
   LogEvent,

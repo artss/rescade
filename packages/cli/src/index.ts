@@ -11,7 +11,7 @@ import {
 } from "@rescade/core";
 import { ApiClient, ClientError, resolveConnection } from "./client.js";
 import { logLine, RUN_EXIT, stepLine } from "./output.js";
-import { cancelRun, listRepos, listRuns, runRemote, showLog, showRun, status } from "./remote.js";
+import { cancelRun, listDir, listRepos, listRuns, listSnapshots, runRemote, showLog, showRun, status } from "./remote.js";
 
 const HELP = `rescade - cascades of restic commands
 
@@ -27,6 +27,8 @@ Usage:
   rescade log <run> [--step <n>]      the log of a run (steps count from 1)
   rescade cancel <run>
   rescade repos                       repo state and who holds them
+  rescade snapshots <repo>            snapshots of a repo, newest first
+  rescade ls <repo> <snapshot> [path] what is in a directory of a snapshot (default /)
 
 Options:
   --config-dir <path>   directory with *.yaml files, or a single file
@@ -220,7 +222,19 @@ async function connect(values: { url?: string; "token-file"?: string }): Promise
   return new ApiClient(conn);
 }
 
-/** Commands that only ask the daemon: status, runs, show, log, cancel, repos. */
+/** Positional arguments of each command: how many at least and at most. */
+const ARITY: Record<string, [number, number, string]> = {
+  status: [0, 0, "takes no arguments"],
+  runs: [0, 0, "takes no arguments"],
+  repos: [0, 0, "takes no arguments"],
+  show: [1, 1, "needs one run id"],
+  log: [1, 1, "needs one run id"],
+  cancel: [1, 1, "needs one run id"],
+  snapshots: [1, 1, "needs one repo name"],
+  ls: [2, 3, "needs a repo, a snapshot id and optionally a path"],
+};
+
+/** Commands that only ask the daemon: status, runs, show, log, cancel, repos, snapshots, ls. */
 async function remote(command: string, argv: string[]): Promise<number> {
   let parsed;
   try {
@@ -245,12 +259,13 @@ async function remote(command: string, argv: string[]): Promise<number> {
     process.stdout.write(HELP);
     return 0;
   }
-  const needsRun = command === "show" || command === "log" || command === "cancel";
-  if (positionals.length !== (needsRun ? 1 : 0)) {
-    console.error(needsRun ? `rescade: ${command} needs one run id` : `rescade: ${command} takes no arguments`);
+  const [min, max, usage] = ARITY[command]!;
+  if (positionals.length < min || positionals.length > max) {
+    console.error(`rescade: ${command} ${usage}`);
     return 2;
   }
-  for (const [name, value] of [["limit", values.limit], ["before", values.before], ["step", values.step], ["run id", positionals[0]]]) {
+  const runId = command === "show" || command === "log" || command === "cancel" ? positionals[0] : undefined;
+  for (const [name, value] of [["limit", values.limit], ["before", values.before], ["step", values.step], ["run id", runId]]) {
     if (value !== undefined && !/^[1-9]\d*$/.test(value)) {
       console.error(`rescade: ${name} must be a positive number, got "${value}"`);
       return 2;
@@ -277,6 +292,10 @@ async function remote(command: string, argv: string[]): Promise<number> {
       return showLog(client, id, values.step, values.json);
     case "cancel":
       return cancelRun(client, id, values.json);
+    case "snapshots":
+      return listSnapshots(client, id, values.json);
+    case "ls":
+      return listDir(client, id, positionals[1]!, positionals[2] ?? "/", values.json);
     default:
       return listRepos(client, values.json);
   }
@@ -304,6 +323,8 @@ async function main(argv: string[]): Promise<number> {
     case "log":
     case "cancel":
     case "repos":
+    case "snapshots":
+    case "ls":
       return remote(command, rest);
     case undefined:
     case "-h":

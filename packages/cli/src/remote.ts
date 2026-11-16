@@ -1,6 +1,14 @@
-import { formatDuration, type LogRecord, type RepoLockList, type RunRecord, type StepRecord } from "@rescade/core";
+import {
+  formatDuration,
+  type LogRecord,
+  type RepoLockList,
+  type RunRecord,
+  type Snapshot,
+  type SnapshotDir,
+  type StepRecord,
+} from "@rescade/core";
 import type { ApiClient, ServerEvent } from "./client.js";
-import { formatTime, logLine, RUN_EXIT, stepLine, table } from "./output.js";
+import { formatBytes, formatTime, logLine, RUN_EXIT, stepLine, table } from "./output.js";
 
 /** The parts of `GET /cascades` the CLI shows. */
 interface CascadeView {
@@ -251,4 +259,46 @@ function lockCount(locks: RepoLockList | undefined): string {
   if (locks.error !== undefined && locks.count === 0) return "?";
   const stale = locks.locks.filter((l) => l.stale).length;
   return stale > 0 ? `${locks.count} (${stale} stale)` : String(locks.count);
+}
+
+export async function listSnapshots(client: ApiClient, repo: string, json: boolean): Promise<number> {
+  const snapshots = await client.get<Snapshot[]>(`/repos/${encodeURIComponent(repo)}/snapshots`);
+  if (json) {
+    print(snapshots);
+    return 0;
+  }
+  if (snapshots.length === 0) {
+    console.log(`no snapshots in "${repo}"`);
+    return 0;
+  }
+  const rows = [["ID", "TIME", "HOST", "SIZE", "TAGS", "PATHS"]];
+  for (const s of snapshots) {
+    const size = s.size === undefined ? "-" : formatBytes(s.size);
+    rows.push([s.shortId, formatTime(s.time), s.hostname, size, s.tags.join(",") || "-", s.paths.join(" ")]);
+  }
+  console.log(table(rows));
+  return 0;
+}
+
+export async function listDir(client: ApiClient, repo: string, snapshot: string, dir: string, json: boolean): Promise<number> {
+  const query = new URLSearchParams({ path: dir });
+  const result = await client.get<SnapshotDir>(
+    `/repos/${encodeURIComponent(repo)}/snapshots/${encodeURIComponent(snapshot)}/ls?${query}`,
+  );
+  if (json) {
+    print(result);
+    return 0;
+  }
+  // directories first, as a file manager shows them
+  const entries = [...result.entries].sort((a, b) => Number(b.type === "dir") - Number(a.type === "dir") || a.name.localeCompare(b.name));
+  const rows = entries.map((e) => [
+    e.permissions ?? "-",
+    e.size === undefined ? "" : formatBytes(e.size),
+    e.mtime === undefined ? "" : formatTime(e.mtime),
+    e.type === "dir" ? `${e.name}/` : e.name,
+  ]);
+  if (rows.length > 0) console.log(table(rows));
+  else console.log(`${result.path} is empty`);
+  if (result.truncated) console.log(`(only the first ${result.entries.length} entries are shown)`);
+  return 0;
 }

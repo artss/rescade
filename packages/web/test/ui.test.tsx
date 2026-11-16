@@ -1,4 +1,4 @@
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -77,6 +77,52 @@ describe("cascades and runs", () => {
     } finally {
       await writeFile(path.join(inject("fakeDir"), "release"), "");
     }
+  });
+});
+
+describe("snapshots", () => {
+  it("lists the snapshots of a repo and browses one a directory at a time", async () => {
+    const id = "d".repeat(64);
+    const node = (p: string, type: string, size?: number) => ({ name: p.split("/").at(-1), type, path: p, size, permissions: "-rw-r--r--" });
+    const dir = path.join(inject("fakeDir"), "snapshots");
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      path.join(dir, encodeURIComponent("/r/b") + ".json"),
+      JSON.stringify({
+        snapshots: [{ time: "2026-11-01T10:00:00Z", paths: ["/home"], hostname: "nas", username: "root", tags: ["weekly"], id, short_id: id.slice(0, 8) }],
+        nodes: { [id]: [node("/home", "dir"), node("/home/u", "dir"), node("/home/u/notes.txt", "file", 2048)] },
+      }),
+    );
+
+    renderApp("/repos");
+    const card = (await screen.findByRole("heading", { name: "b" }, wait)).parentElement!;
+    fireEvent.click(within(card).getByRole("link", { name: "Snapshots" }));
+    expect(await screen.findByText("weekly", {}, wait)).toBeDefined();
+    fireEvent.click(screen.getByRole("link", { name: "dddddddd" }));
+
+    fireEvent.click(await screen.findByRole("link", { name: "home/" }, wait));
+    fireEvent.click(await screen.findByRole("link", { name: "u/" }, wait));
+    expect(await screen.findByText("notes.txt", {}, wait)).toBeDefined();
+    expect(screen.getByText("2.0 KiB")).toBeDefined();
+    expect(location.search).toBe("?path=%2Fhome%2Fu");
+
+    // back up the path
+    fireEvent.click(within(screen.getByRole("navigation", { name: "Path" })).getByRole("link", { name: "home" }));
+    expect(await screen.findByRole("link", { name: "u/" }, wait)).toBeDefined();
+  });
+
+  it("links the snapshot of a backup step to the snapshot", async () => {
+    const run = await api<RunRecord>("POST", "/cascades/home/run");
+    renderApp(`/runs/${run.id}`);
+    const link = await screen.findByRole("link", { name: /^[0-9a-f]{8}$/ }, { timeout: 5000 });
+    fireEvent.click(link);
+    await waitFor(() => expect(location.pathname).toMatch(/^\/repos\/a\/snapshots\/[0-9a-f]{64}$/), wait);
+    expect(await screen.findByText("Empty directory.", {}, wait)).toBeDefined();
+  });
+
+  it("shows what restic said when a snapshot cannot be read", async () => {
+    renderApp(`/repos/a/snapshots/${"e".repeat(64)}`);
+    expect((await screen.findByRole("alert", {}, wait)).textContent).toMatch(/no matching ID found/);
   });
 });
 

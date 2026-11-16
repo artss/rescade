@@ -4,11 +4,14 @@
 // State in $FAKE_RESTIC_STATE:
 //   repos/<encoded path>.json   { id, chunker_polynomial, password }
 //   locks/<encoded path>.json   [{ id, time, exclusive, hostname, username, pid }], lock files left in the repo
+//   snapshots/<encoded path>.json  { snapshots: [as restic snapshots --json], nodes: { <snapshot id>: [ls nodes] } };
+//                                backup adds a snapshot without nodes
 //   calls.jsonl                 one line per call: { cmd, args, options, repo, from, ... }
 //   sigterm                     created when a hanging call receives SIGTERM
 //
 // Switches (environment):
-//   FAKE_RESTIC_EXIT_<CMD>=n     fail <CMD> (BACKUP, INIT, CAT, COPY, CHECK, FORGET, PRUNE, LIST) with exit code n;
+//   FAKE_RESTIC_EXIT_<CMD>=n     fail <CMD> (BACKUP, INIT, CAT, COPY, CHECK, FORGET, PRUNE, LIST, SNAPSHOTS, LS)
+//                                with exit code n;
 //                                backup still prints its summary, as real restic does for code 3
 //   FAKE_RESTIC_UNREACHABLE=a,b  repository paths that fail like an unreachable host (exit 1)
 //   FAKE_RESTIC_HANG=<cmd>       hang in <cmd> until signalled; SIGTERM exits with 130
@@ -107,8 +110,32 @@ function locks() {
   return fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, "utf8")) : [];
 }
 
+function snapshotsFile() {
+  return path.join(state, "snapshots", encodeURIComponent(repoPath) + ".json");
+}
+
+function readSnapshots() {
+  const f = snapshotsFile();
+  return fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, "utf8")) : { snapshots: [], nodes: {} };
+}
+
 function run() {
   switch (cmd) {
+    case "snapshots":
+      console.log(JSON.stringify(readSnapshots().snapshots));
+      return;
+    case "ls": {
+      const [id, dir] = args.slice(args.indexOf("--") + 1);
+      const data = readSnapshots();
+      const snap = data.snapshots.find((s) => s.id.startsWith(id)) ?? fatal(1, `no matching ID found for prefix "${id}"`);
+      console.log(JSON.stringify({ ...snap, message_type: "snapshot", struct_type: "snapshot" }));
+      for (const node of data.nodes[snap.id] ?? []) {
+        if (node.path === dir || path.posix.dirname(node.path) === dir) {
+          console.log(JSON.stringify({ ...node, message_type: "node", struct_type: "node" }));
+        }
+      }
+      return;
+    }
     case "list": {
       for (const lock of locks()) console.log(lock.id);
       return;
@@ -142,6 +169,7 @@ function run() {
           JSON.stringify({ message_type: "error", error: { message: "permission denied" }, during: "archival", item: "/secret" }) + "\n",
         );
       }
+      const snapshotId = crypto.randomBytes(32).toString("hex");
       console.log(
         JSON.stringify({
           message_type: "summary",
@@ -149,9 +177,22 @@ function run() {
           files_changed: 1,
           files_unmodified: 10,
           data_added: 2048,
-          snapshot_id: crypto.randomBytes(32).toString("hex"),
+          snapshot_id: snapshotId,
         }),
       );
+      const data = readSnapshots();
+      data.snapshots.push({
+        time: new Date().toISOString(),
+        paths: args.slice(args.indexOf("--") + 1),
+        hostname: "fake",
+        username: "root",
+        tags: args.flatMap((a, i) => (args[i - 1] === "--tag" ? [a] : [])),
+        summary: { data_added: 2048, total_files_processed: 13, total_bytes_processed: 4096 },
+        id: snapshotId,
+        short_id: snapshotId.slice(0, 8),
+      });
+      fs.mkdirSync(path.dirname(snapshotsFile()), { recursive: true });
+      fs.writeFileSync(snapshotsFile(), JSON.stringify(data));
       if (forced !== undefined) {
         const message = forced === "3" ? "Warning: at least one source file could not be read" : "Fatal: fake failure in backup";
         process.stderr.write(JSON.stringify({ message_type: "exit_error", code: Number(forced), message }) + "\n");

@@ -1,7 +1,18 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { request } from "./api.js";
 import { mergeLog, type LogData } from "./log.js";
-import type { CascadeView, DaemonStatus, LogRecord, RepoView, RunRecord, RunWithSteps, ServerEvent, StepRecord } from "./types.js";
+import type {
+  CascadeView,
+  DaemonStatus,
+  LogRecord,
+  RepoView,
+  RunRecord,
+  RunWithSteps,
+  ServerEvent,
+  Snapshot,
+  SnapshotDir,
+  StepRecord,
+} from "./types.js";
 
 export const keys = {
   status: ["status"] as const,
@@ -11,6 +22,9 @@ export const keys = {
   run: (id: number) => ["run", id] as const,
   log: (id: number) => ["log", id] as const,
   repos: ["repos"] as const,
+  snapshots: (repo: string) => ["snapshots", repo] as const,
+  allSnapshots: ["snapshots"] as const,
+  snapshotDir: (repo: string, id: string, path: string) => ["snapshot-dir", repo, id, path] as const,
 };
 
 const PAGE = 50;
@@ -29,6 +43,8 @@ export function applyEvent(qc: QueryClient, e: ServerEvent): void {
       qc.setQueryData<RunWithSteps>(keys.run(e.step.runId), (old) => old && { ...old, steps: withStep(old.steps, e.step) });
       // steps take and release repos
       void qc.invalidateQueries({ queryKey: keys.repos });
+      // backup, retain and copy add or remove snapshots; only lists on screen are asked for again
+      if (!isActive(e.step.status)) void qc.invalidateQueries({ queryKey: keys.allSnapshots });
       return;
     case "log": {
       // only for a log someone is looking at
@@ -57,6 +73,20 @@ export const useCascades = () =>
   useQuery({ queryKey: keys.cascades, queryFn: () => request<CascadeView[]>("GET", "/cascades") });
 
 export const useRepos = () => useQuery({ queryKey: keys.repos, queryFn: () => request<RepoView[]>("GET", "/repos") });
+
+const repoPath = (repo: string) => `/repos/${encodeURIComponent(repo)}/snapshots`;
+
+export const useSnapshots = (repo: string) =>
+  useQuery({ queryKey: keys.snapshots(repo), queryFn: () => request<Snapshot[]>("GET", repoPath(repo)) });
+
+/** A directory of a snapshot does not change: it is not asked for again while cached. */
+export const useSnapshotDir = (repo: string, id: string, path: string) =>
+  useQuery({
+    queryKey: keys.snapshotDir(repo, id, path),
+    queryFn: () =>
+      request<SnapshotDir>("GET", `${repoPath(repo)}/${encodeURIComponent(id)}/ls?${new URLSearchParams({ path })}`),
+    staleTime: Infinity,
+  });
 
 export const useRun = (id: number) =>
   useQuery({ queryKey: keys.run(id), queryFn: () => request<RunWithSteps>("GET", `/runs/${id}`) });

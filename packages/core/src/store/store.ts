@@ -24,6 +24,8 @@ export interface StepRecord {
   index: number;
   type: Step["type"];
   label: string;
+  /** backup: the repo the snapshot goes to. */
+  repo?: string;
   status: StepState;
   exitCode?: number;
   startedAt?: number;
@@ -70,7 +72,7 @@ export interface PruneResult {
   logLines: number;
 }
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 // the log lives in its own table, without a foreign key, so it can be rotated apart from run metadata
 const SCHEMA = `
@@ -96,6 +98,7 @@ CREATE TABLE steps (
   reason TEXT,
   stderr_tail TEXT,
   summary TEXT,
+  repo TEXT,
   PRIMARY KEY (run_id, idx)
 );
 CREATE TABLE log (
@@ -108,6 +111,11 @@ CREATE TABLE log (
 );
 CREATE INDEX log_by_run ON log (run_id, step, seq);
 `;
+
+/** Upgrades from each older schema version to the next one. */
+const MIGRATIONS: Record<number, string> = {
+  1: "ALTER TABLE steps ADD COLUMN repo TEXT;",
+};
 
 /** Run history in SQLite: runs, their steps, and step logs. */
 export class Store {
@@ -124,8 +132,8 @@ export class Store {
       updateRun: db.prepare("UPDATE runs SET status = ?, reason = ?, finished_at = ? WHERE id = ?"),
       saveStep: db.prepare(
         `INSERT OR REPLACE INTO steps
-           (run_id, idx, type, label, status, exit_code, started_at, duration_ms, reason, stderr_tail, summary)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (run_id, idx, type, label, status, exit_code, started_at, duration_ms, reason, stderr_tail, summary, repo)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ),
       appendLog: db.prepare("INSERT INTO log (run_id, step, ts, stream, line) VALUES (?, ?, ?, ?, ?)"),
       run: db.prepare("SELECT * FROM runs WHERE id = ?"),
@@ -145,8 +153,11 @@ export class Store {
       const version = Number(db.prepare("PRAGMA user_version").get()?.user_version ?? 0);
       if (version === 0) {
         db.exec(`BEGIN; ${SCHEMA} PRAGMA user_version = ${SCHEMA_VERSION}; COMMIT;`);
-      } else if (version !== SCHEMA_VERSION) {
-        throw new Error(`${file}: unsupported database schema version ${version} (expected ${SCHEMA_VERSION})`);
+      } else if (version > SCHEMA_VERSION) {
+        throw new Error(`${file}: unsupported database schema version ${version} (expected ${SCHEMA_VERSION} or older)`);
+      } else if (version < SCHEMA_VERSION) {
+        const steps = Array.from({ length: SCHEMA_VERSION - version }, (_, i) => MIGRATIONS[version + i]).join(" ");
+        db.exec(`BEGIN; ${steps} PRAGMA user_version = ${SCHEMA_VERSION}; COMMIT;`);
       }
       return new Store(db);
     } catch (e) {
@@ -230,6 +241,7 @@ export class Store {
       s.reason ?? null,
       s.stderrTail === undefined ? null : JSON.stringify(s.stderrTail),
       s.summary === undefined ? null : JSON.stringify(s.summary),
+      s.repo ?? null,
     );
   }
 
@@ -323,6 +335,8 @@ function toStep(r: Row): StepRecord {
   const reason = str(r.reason);
   const tail = str(r.stderr_tail);
   const summary = str(r.summary);
+  const repo = str(r.repo);
+  if (repo !== undefined) s.repo = repo;
   if (exitCode !== undefined) s.exitCode = exitCode;
   if (startedAt !== undefined) s.startedAt = startedAt;
   if (durationMs !== undefined) s.durationMs = durationMs;

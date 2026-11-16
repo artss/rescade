@@ -23,6 +23,8 @@ export { ensureRepo } from "./restic/ensure.js";
 export type { EnsureResult, RepoConfig, RepoProblem } from "./restic/ensure.js";
 export { MAX_LOCK_DETAILS, STALE_LOCK_MS } from "./restic/lockfiles.js";
 export type { RepoLockList, ResticLock } from "./restic/lockfiles.js";
+export { BROWSE_RETRY_LOCK, listDir, listSnapshots, MAX_DIR_ENTRIES, SNAPSHOT_ID } from "./restic/snapshots.js";
+export type { BrowseProblem, BrowseResult, Snapshot, SnapshotDir, SnapshotEntry } from "./restic/snapshots.js";
 export { DEFAULT_REPO_CHECK_TIMEOUT_MS, EXIT, resticCommand } from "./restic/restic.js";
 export type { ResticContext } from "./restic/restic.js";
 export { checkResticVersion, MIN_RESTIC_VERSION, parseResticVersion } from "./restic/version.js";

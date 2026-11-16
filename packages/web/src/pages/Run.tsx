@@ -9,6 +9,7 @@ import { Card } from "../components/Card.js";
 import { ErrorBox } from "../components/ErrorBox.js";
 import { Loading } from "../components/Loading.js";
 import { Time } from "../components/Time.js";
+import { snapshotHref } from "./Snapshots.js";
 
 export function RunPage({ id }: { id: number }) {
   const { data: run, error } = useRun(id);
@@ -67,7 +68,7 @@ function StepItem({ step: s }: { step: StepRecord }) {
         {s.durationMs !== undefined && <span className="text-zinc-500">{formatDuration(s.durationMs)}</span>}
       </div>
       {s.reason && <p className="mt-1 text-sm">{s.reason}</p>}
-      {s.summary && <Summary summary={s.summary} />}
+      {s.summary && <Summary summary={s.summary} repo={s.repo} />}
       {s.stderrTail && s.stderrTail.length > 0 && (
         <pre className="mt-2 overflow-x-auto rounded bg-zinc-100 p-2 text-xs text-red-800 dark:bg-zinc-950 dark:text-red-300">
           {s.stderrTail.join("\n")}
@@ -78,7 +79,7 @@ function StepItem({ step: s }: { step: StepRecord }) {
 }
 
 /** restic's backup summary; sizes in bytes and times in seconds are made readable. */
-function Summary({ summary }: { summary: Record<string, unknown> }) {
+function Summary({ summary, repo }: { summary: Record<string, unknown>; repo?: string }) {
   const show = (key: string, v: unknown): string => {
     if (typeof v === "number" && (key.includes("bytes") || key === "data_added" || key === "data_added_packed")) return formatBytes(v);
     if (typeof v === "number" && key === "total_duration") return formatDuration(v * 1000);
@@ -91,7 +92,15 @@ function Summary({ summary }: { summary: Record<string, unknown> }) {
         .map(([key, v]) => (
           <div key={key} className="contents">
             <dt className="text-zinc-500">{key.replaceAll("_", " ")}</dt>
-            <dd className="font-mono">{show(key, v)}</dd>
+            <dd className="font-mono">
+              {key === "snapshot_id" && typeof v === "string" && repo !== undefined ? (
+                <Link href={snapshotHref(repo, v)} className="text-sky-700 hover:underline dark:text-sky-400">
+                  {v.slice(0, 8)}
+                </Link>
+              ) : (
+                show(key, v)
+              )}
+            </dd>
           </div>
         ))}
     </dl>

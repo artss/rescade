@@ -8,6 +8,7 @@ import { CascadesPage } from "./pages/Cascades.js";
 import { ReposPage } from "./pages/Repos.js";
 import { RunPage } from "./pages/Run.js";
 import { RunsPage } from "./pages/Runs.js";
+import { SnapshotPage, SnapshotsPage } from "./pages/Snapshots.js";
 import { applyEvent } from "./queries.js";
 import { followEvents } from "./sse.js";
 import { useAuth } from "./token.js";
@@ -51,6 +52,8 @@ function SignedIn() {
         <Route path="/runs" component={RunsPage} />
         <Route path="/runs/:id">{(p) => <RunPage key={p.id} id={Number(p.id)} />}</Route>
         <Route path="/repos" component={ReposPage} />
+        <Route path="/repos/:name/snapshots">{(p) => <SnapshotsPage key={p.name} repo={p.name} />}</Route>
+        <Route path="/repos/:name/snapshots/:id">{(p) => <SnapshotPage key={`${p.name}/${p.id}`} repo={p.name} id={p.id} />}</Route>
         <Route>
           <p className="text-sm text-zinc-500">No such page.</p>
         </Route>

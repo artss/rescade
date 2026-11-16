@@ -32,6 +32,8 @@ export default async function setup(project: TestProject) {
 repos:
   a: { path: /r/a, password: pw-a, retention: { daily: 7 } }
   b: { path: /r/b, password: pw-b, from: a }
+sets:
+  home: { include: [/home] }
 cascades:
   daily:
     description: Forget old snapshots
@@ -41,6 +43,9 @@ cascades:
   slow:
     steps:
       - run: { command: ${hold}, lock: [b] }
+  home:
+    steps:
+      - backup: { set: home, repo: a }
 `,
   );
   const daemon = await startDaemon(
