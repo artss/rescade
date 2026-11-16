@@ -1,5 +1,4 @@
-#!/usr/bin/env -S node --disable-warning=ExperimentalWarning
-// node:sqlite is still experimental on Node 22; its warning would be the first line of every daemon log
+#!/usr/bin/env node
 import { pino } from "pino";
 import { readSettings, SettingsError, startDaemon, StartupError, USAGE } from "./daemon.js";
 

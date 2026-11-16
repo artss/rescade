@@ -4,7 +4,7 @@
   "type": "module",
   "packageManager": "pnpm@12.11.2",
   "engines": {
-    "node": ">=22.13"
+    "node": ">=26"
   },
   "scripts": {
     "build": "tsc -b && pnpm --filter @rescade/web build",

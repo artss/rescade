@@ -1,8 +1,9 @@
 # rescade: the daemon (entrypoint), the CLI, the web UI and restic in one image.
 
 # the build gives plain JS (no native modules), so it runs on the build machine's platform, not emulated
-FROM --platform=$BUILDPLATFORM node:22-alpine AS build
-RUN corepack enable
+FROM --platform=$BUILDPLATFORM node:26-alpine AS build
+# Node 26 no longer bundles corepack; it installs the pnpm from packageManager
+RUN npm install -g corepack@0.36.0 && corepack enable
 WORKDIR /src
 # manifests first: the install layer is reused while only sources change
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
@@ -31,14 +32,14 @@ RUN case "$TARGETARCH" in \
  && bunzip2 /tmp/restic.bz2 \
  && install -m 755 /tmp/restic /usr/local/bin/restic
 
-FROM node:22-alpine
+FROM node:26-alpine
 # tini reaps orphaned grandchildren of steps; openssh-client for sftp; tzdata for cascade time zones
 RUN apk add --no-cache tini openssh-client ca-certificates tzdata
 COPY --from=restic /usr/local/bin/restic /usr/local/bin/restic
 COPY --from=build /out/daemon /opt/rescade/daemon
 COPY --from=build /out/cli /opt/rescade/cli
-# BusyBox env has no -S for the daemon's shebang, so both get a wrapper (tsc does not set the exec bit either)
-RUN printf '#!/bin/sh\nexec node --disable-warning=ExperimentalWarning /opt/rescade/daemon/dist/index.js "$@"\n' \
+# tsc does not set the exec bit on dist/*.js, so both get a wrapper
+RUN printf '#!/bin/sh\nexec node /opt/rescade/daemon/dist/index.js "$@"\n' \
       > /usr/local/bin/rescaded \
  && printf '#!/bin/sh\nexec node /opt/rescade/cli/dist/index.js "$@"\n' > /usr/local/bin/rescade \
  && chmod +x /usr/local/bin/rescaded /usr/local/bin/rescade \
