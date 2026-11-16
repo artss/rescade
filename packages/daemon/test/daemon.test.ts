@@ -205,6 +205,11 @@ describe("API access", () => {
     expect(res.body).toEqual({ error: 'host "evil.example" is not allowed' });
   });
 
+  it("answers to any Host without RESCADE_ALLOWED_HOSTS", async () => {
+    await start(undefined, {}, { extraHosts: undefined });
+    expect((await api("GET", "/api/cascades", { host: "evil.example" })).status).toBe(200);
+  });
+
   it("allows CORS only for configured origins", async () => {
     await start();
     const pre = await api("OPTIONS" as "GET", "/api/cascades", { authorization: "", origin: "https://ui.example" });

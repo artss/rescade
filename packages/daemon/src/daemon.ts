@@ -137,7 +137,8 @@ export async function startDaemon(settings: Settings, logger: Logger, options: D
 
     const webDir = options.webDir === undefined ? findWebDir() : (options.webDir ?? undefined);
     if (webDir === undefined) logger.info("the web UI is not built, serving only the API");
-    const hosts = new Set<string>();
+    const extraHosts = settings.extraHosts;
+    const hosts = extraHosts && new Set<string>();
     const app = await buildServer({
       config: () => config,
       status: () => status,
@@ -157,7 +158,7 @@ export async function startDaemon(settings: Settings, logger: Logger, options: D
     await app.listen({ host, port: settings.port });
     // known only now when port 0 was asked for
     const port = (app.server.address() as { port: number }).port;
-    for (const h of allowedHosts(host, port, settings.extraHosts)) hosts.add(h);
+    if (extraHosts && hosts) for (const h of allowedHosts(host, port, extraHosts)) hosts.add(h);
     const address = `${host.includes(":") ? `[${host}]` : host}:${port}`;
     logger.info({ address, cascades: Object.keys(config.cascades).length }, "rescade daemon started");
 

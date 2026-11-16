@@ -19,8 +19,8 @@ services:
       - "127.0.0.1:8765:8765"
     environment:
       TZ: Europe/Berlin
-      # another published port or a host name for the UI: list the Host values here
-      # RESCADE_ALLOWED_HOSTS: backup.lan:8765
+      # optional: accept only these Host values ("host:port" on that port, "host" on any)
+      # RESCADE_ALLOWED_HOSTS: backup.lan, backup.example.com
     env_file: rescade.env
     secrets:
       - rescade_token
