@@ -4,7 +4,8 @@ Cascades of restic commands on a schedule, described in YAML. The daemon `rescad
 schedule, keeps the history in SQLite and serves an HTTP API; the `rescade` command talks to it, and
 can also validate a config or run a cascade on its own. A web interface comes later.
 
-Requires Node >= 22.13 (for the built-in `node:sqlite`) and restic >= 0.17.
+Requires Node >= 22.13 (for the built-in `node:sqlite`) and restic >= 0.17 (`rescaded` and `rescade run --local`
+warn about an older one: it does not report a missing repo or a wrong password with their own exit codes).
 
 ## Try it
 
@@ -37,7 +38,7 @@ The API lives under `/api` and needs `Authorization: Bearer <token>` on every re
 `GET /api/status`, `GET /api/cascades`, `GET /api/runs?cascade=&limit=&before=`, `GET /api/runs/:id`,
 `GET /api/runs/:id/log?step=&after=`, `POST /api/cascades/:name/run`, `POST /api/runs/:id/cancel`,
 `GET /api/repos`, `GET /api/events?run=|cascade=` (server-sent events). The OpenAPI document is at
-`/api/openapi.json` and Swagger UI at `/api/docs`, both without the token.
+`/api/openapi.json`, Swagger UI at `/api/docs` and the health check at `/api/health`, all without the token.
 
 ## The web interface
 
@@ -45,6 +46,25 @@ The daemon serves it on its own address (`http://127.0.0.1:8765/` by default) wh
 (`pnpm build`). It asks for the API token once per tab ("Remember" keeps it in the browser) and shows
 cascades, runs with live logs, repos and their locks, and a warning when a config reload failed.
 To work on it, `pnpm --filter @rescade/web dev` serves it with Vite and proxies `/api` to `$RESCADE_URL`.
+
+## Docker
+
+`ghcr.io/artss/rescade` (`linux/amd64`, `linux/arm64`) holds the daemon, the CLI, the web UI and restic. A complete
+example is in `examples/docker`: the API token as a Docker secret, repo passwords in an env file, the config
+mounted read-only, history and restic's cache in a volume.
+
+- Set `hostname:` for the container. restic records it in each snapshot and finds the parent snapshot by host and
+  paths; without it every recreated container is a new host and each backup reads all files again.
+  Do not use `RESTIC_HOST` for this: restic also takes it as the default `--host` filter of `forget`, `copy` and `check`.
+- Mount the backup sources read-only at paths that do not collide with the image's own (`/etc`, `/usr`,
+  `/var/lib/rescade`, ...) and do not change later. A `/host` prefix is a safe choice (`/home:/host/home:ro`, then
+  `/host/home` in `sets`); restore with `restic restore <id>:/host/home --target /home`.
+- The daemon runs as root so that restic can read any source file.
+- Docker Desktop on macOS cannot back up bind-mounted host directories: restic sets `O_NOATIME` on each file it
+  reads, and Docker Desktop's file sharing then fails every read with `input/output error`. Named volumes work
+  there; on Linux hosts bind mounts are plain mounts and are not affected.
+- `docker compose kill -s HUP rescade` rereads the config, `docker compose exec rescade rescade status` uses the CLI.
+- `GET /api/health` answers without the token for the image's health check.
 
 ## The client
 

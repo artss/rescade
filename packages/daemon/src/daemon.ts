@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import type { Logger } from "pino";
 import {
+  checkResticVersion,
   formatDiagnostic,
   loadConfig,
   Runner,
@@ -93,6 +94,9 @@ export async function startDaemon(settings: Settings, logger: Logger, options: D
       repoCheckTimeoutMs: settings.repoCheckTimeoutMs,
       onRepoChecked: (repo: string, result: Parameters<RepoStates["update"]>[1]) => repos.update(repo, result, Date.now()),
     };
+    const restic = await checkResticVersion(settings.restic, options.env);
+    if (restic.warning !== undefined) logger.warn({ restic: settings.restic, version: restic.version }, restic.warning);
+    else logger.info({ restic: settings.restic, version: restic.version }, "restic found");
     logger.info({ repos: Object.keys(config.repos).length }, "checking repos");
     const warm = await warmUp(config, resticCtx, (repo, line) => logger.info({ repo }, line));
     for (const [repo, r] of warm.results) {

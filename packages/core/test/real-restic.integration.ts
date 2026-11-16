@@ -3,7 +3,7 @@ import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises"
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { ensureRepo, runCascade, type Cascade, type Config, type RunEvent, type Step } from "../src/index.js";
+import { checkResticVersion, ensureRepo, runCascade, type Cascade, type Config, type RunEvent, type Step } from "../src/index.js";
 import { repo } from "./helpers/fake.js";
 
 const RESTIC = process.env.RESCADE_RESTIC ?? "restic";
@@ -14,7 +14,9 @@ let src: string;
 let env: Record<string, string>;
 
 beforeAll(async () => {
-  execFileSync(RESTIC, ["version"]); // fail early and clearly when restic is missing
+  // fail early and clearly when restic is missing or too old
+  const version = await checkResticVersion(RESTIC, process.env);
+  if (version.warning !== undefined) throw new Error(version.warning);
   dir = await mkdtemp(path.join(os.tmpdir(), "rescade-real-"));
   src = path.join(dir, "src");
   await mkdir(path.join(src, "sub"), { recursive: true });
@@ -24,7 +26,7 @@ beforeAll(async () => {
   env = { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: dir, RESTIC_CACHE_DIR: path.join(dir, "cache") };
 });
 afterAll(async () => {
-  await rm(dir, { recursive: true, force: true });
+  if (dir) await rm(dir, { recursive: true, force: true }); // unset when beforeAll stopped early
 });
 
 function config(steps: Step[], overrides: Partial<Config["repos"]> = {}): Config {

@@ -703,6 +703,45 @@
     }
   },
   "paths": {
+    "/api/health": {
+      "get": {
+        "summary": "Whether the daemon answers; needs no token",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The daemon is up",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The daemon is up",
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "enum": [
+                        true
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Host not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/status": {
       "get": {
         "summary": "The daemon: version, uptime, the config in use and the outcome of the latest reload",

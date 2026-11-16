@@ -73,6 +73,8 @@ Fastify (+ `@fastify/swagger`: OpenAPI по схемам маршрутов, `@f
   репо (для `copy` сначала источника, потом цели); `options` репо идут как `-o key=value`. Источник для `copy` и
   `init --copy-chunker-params` передаётся через `RESTIC_FROM_REPOSITORY`/`RESTIC_FROM_PASSWORD`.
 - Требуется restic >= 0.17 (коды выхода 10 и 12). Любой другой ненулевой код `cat config` = `unreachable`.
+  `rescaded` при старте и `rescade run --local` перед запуском читают `restic version`: старше 0.17, не запустился
+  или версия не разобралась = предупреждение (в лог демона, в stderr CLI), не ошибка.
 - `cat config` ограничен таймаутом (`RESCADE_REPO_CHECK_TIMEOUT`, по умолчанию 2m): недоступный REST/S3 restic
   ретраит минутами. Истёк = `unreachable`, init не делается. У backup/prune/copy/check таймаута нет.
 - Коды выхода `rescade run`: 0 success, 3 warning, 1 failed или interrupted, 130 cancelled, 75 skipped (репо заняты или
@@ -153,6 +155,40 @@ Fastify (+ `@fastify/swagger`: OpenAPI по схемам маршрутов, `@f
 6. ~~Swagger (OpenAPI по схемам маршрутов)~~ (сделано)
 7. ~~Веб-интерфейс: API для него (`/api`, `/api/status`, `id` и `after` в логе, раздача статики), пакет `web`~~ (сделано;
    экран логов демона отложен)
+8. Docker-образ (демон, CLI, веб-интерфейс, restic) с публикацией из CI и пример `docker-compose.yaml`
+9. Восстановление из бэкапа (обсудить: сейчас клиенты только запускают каскады, отменяют и смотрят состояние)
+
+## Docker
+
+- Один образ: `rescaded` (точка входа), `rescade` (для `docker exec`), собранный веб-интерфейс и restic.
+  Многоступенчатая сборка: pnpm-сборка, затем только prod-зависимости (`pnpm deploy --prod`) на `node:22-alpine`
+  (на новую LTS переедем отдельно).
+- restic берётся бинарником с GitHub-релиза фиксированной версии со сверкой SHA-256 (в пакетах дистрибутивов
+  бывает старше 0.17). В образе также `openssh-client` (sftp), `ca-certificates`, `tzdata`; `rclone` не входит.
+- PID 1 — `tini`: демон убивает группы процессов, но осиротевших внуков кто-то должен пожинать.
+- Процесс работает от root: restic должен читать любые файлы источников. Источники монтируются только для чтения.
+- Внутри контейнера `RESCADE_ADDR=0.0.0.0:8765`, `RESCADE_CONFIG_DIR=/etc/rescade/config` (только чтение),
+  `RESCADE_DATA_DIR=/var/lib/rescade` (том), `RESTIC_CACHE_DIR=/var/lib/rescade/cache` (кеш restic переживает
+  пересоздание контейнера), токен файлом через Docker secret (`RESCADE_TOKEN_FILE=/run/secrets/rescade_token`).
+- `GET /api/health` без токена (за проверкой `Host`): 200 `{ "ok": true }`, ничего о состоянии не раскрывает;
+  его опрашивает `HEALTHCHECK` образа.
+- SIGHUP: `docker kill -s HUP <контейнер>`; SIGTERM от `docker stop` с `stop_grace_period` больше таймаута
+  SIGTERM→SIGKILL у restic.
+- Имя хоста в снапшотах фиксируется через `hostname:` в compose: без `--host` restic пишет в снапшот имя системы,
+  а у контейнера оно иначе меняется при пересоздании (и родительский снапшот, который ищется по `host,paths`,
+  не находится). `RESTIC_HOST` не годится: restic берёт его ещё и фильтром по умолчанию в `forget`, `copy`,
+  `check`, `snapshots`, и `retain`/`copy` молча стали бы касаться только снапшотов этого хоста.
+- Куда монтировать источники, решает пользователь. Документация и пример предупреждают: путь внутри контейнера
+  не должен пересекаться с путями образа (`/etc`, `/usr`, `/var/lib/rescade` и т. п.) и должен оставаться
+  постоянным (restic ищет родительский снапшот по `host,paths`; подменить пути в снапшоте restic не умеет,
+  restic#2714). Предлагается префикс `/host` (`/home:/host/home:ro`, в `sets` пути `/host/...`). Цена префикса:
+  снапшоты, снятые без него, родителями не станут (первый backup после переезда читает всё), при восстановлении
+  префикс снимается через `restic restore <id>:/host/home --target /home`. Монтировать по хостовым путям тоже
+  можно, если они ни с чем в образе не пересекаются.
+- Порт публикуется на `127.0.0.1:8765`; при другом внешнем порте или имени нужен `RESCADE_ALLOWED_HOSTS`.
+- Публикация: GitHub Actions, `ghcr.io/artss/rescade`, `linux/amd64` и `linux/arm64` через buildx;
+  тег `vX.Y.Z` даёт образы `X.Y.Z`, `X.Y`, `latest`, ветка `main` — `edge`. Перед сборкой образа гоняются тесты.
+- Пример в `examples/docker-compose.yaml` рядом с `examples/config`.
 
 ## Веб-интерфейс
 

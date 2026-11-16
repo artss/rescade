@@ -15,7 +15,8 @@
 через `AbortSignal`), мьютексы репо (`src/run/locks.ts`, берутся вокруг шага через `RunOptions.lock`),
 оркестратор (`src/run/runner.ts`: `on-busy`, без самоналожения каскада, статусы `queued`/`running`, запись в хранилище,
 события), планировщик (`src/schedule.ts`, croner), хранилище (`src/store/store.ts`, `node:sqlite`).
-Прогрев репо при старте (`src/restic/warmup.ts`), чтение токена (`src/token.ts`).
+Прогрев репо при старте (`src/restic/warmup.ts`), проверка версии restic (`src/restic/version.ts`, предупреждение
+в `rescaded` и `run --local`), чтение токена (`src/token.ts`).
 `packages/daemon`: `rescaded` (`settings.ts` флаги/env/токен/Host, `server.ts` Fastify-маршруты и SSE, `daemon.ts` запуск,
 SIGHUP, остановка с `interrupted`, чистка истории раз в час, `repos.ts` состояние репо в памяти, `schemas.ts` схемы
 ответов для сериализации и `GET /api/openapi.json` и Swagger UI на `/api/docs` без токена; копия в `docs/openapi.json`;
@@ -26,10 +27,21 @@ API под `/api`, остальные пути отдают собранный �
 `sse.ts` поток событий через fetch, `queries.ts` хуки и `applyEvent`, `log.ts` склейка лога по `id`, `pages/*`), демон
 находит его сборку через `import.meta.resolve("@rescade/web/package.json")`.
 Бэкенды restic (`src/config/backends.ts`: префикс `path`, опции по бэкенду, конфликты `env`/`options` в парах
-`copy`/`from`; описание в `docs/backends.md`). 191 тест vitest (проекты `node` и `web`), фейковый restic в `packages/core/test/fake-restic.mjs`, 7 интеграционных с настоящим restic
+`copy`/`from`; описание в `docs/backends.md`). 201 тест vitest (проекты `node` и `web`), фейковый restic в `packages/core/test/fake-restic.mjs`, 7 интеграционных с настоящим restic
 (проверено на 0.19.1), пример в `examples/config`.
 
-Шаги 1–7 из DESIGN.md сделаны. Отложено: экран логов демона, уведомления, веб-редактор конфига.
+Шаги 1–7 из DESIGN.md сделаны. Шаг 8: `Dockerfile`, `.github/workflows/ci.yaml` (тесты, затем образ
+в `ghcr.io/artss/rescade` для amd64/arm64), пример `examples/docker`. Отложено: экран логов демона, уведомления, веб-редактор конфига.
+
+Следующий шаг (9): восстановление из бэкапа, дизайн ещё не обсуждался.
+
+Проверено на Linux: `pnpm test:integration` (restic 0.19.1 с релиза), образ с bind mount настоящих каталогов
+под `/host` (backup файлов только для root, родительский снапшот при повторе, `copy` с `from`, restore со снятием префикса,
+SIGHUP, `interrupted` после `docker stop` и после `kill -9`).
+
+Не проверено:
+- первый прогон CI после слияния `docker` в `main`: сборка arm64 через QEMU, публикация `edge` в ghcr.io;
+  пакет на ghcr.io по умолчанию приватный, его надо сделать публичным.
 
 ## Команды
 
@@ -45,7 +57,8 @@ API под `/api`, остальные пути отдают собранный �
 
 - TypeScript строгий (`strict`, `noUncheckedIndexedAccess`), ESM, `module: NodeNext`: импорты с расширением `.js`.
 - В `tsconfig.base.json` явно `"types": ["node"]` (в TypeScript 7 типы Node по умолчанию не подключаются).
-- Node >= 22.13 (проверялось на 22.23): нужен `node:sqlite` без флага. Зависимости: `yaml`, `zod` (v4), `croner`; тесты `vitest`.
+- Node >= 22.13 (проверялось на 22.23): нужен `node:sqlite` без флага. `.nvmrc` = `22`, `engineStrict` в
+  `pnpm-workspace.yaml` (проверяет только `pnpm install`, не `pnpm test`). Зависимости: `yaml`, `zod` (v4), `croner`; тесты `vitest`.
 - Ядро (`core`) без сетевого кода и без обращений к `process` вне CLI/демона. Внешние процессы запускать
   через `spawn` без shell, секреты передавать через окружение процесса, а не через аргументы.
 - Ошибки конфигурации всегда с позицией (файл, строка, колонка). Одна проверка выдаёт как можно больше ошибок за прогон.
@@ -65,8 +78,8 @@ API под `/api`, остальные пути отдают собранный �
 - Неквотированный `**/venv` в YAML читается как alias (`yaml` бросает `ReferenceError` при `toJS()`), поэтому алиасы
   проверяются заранее через `visit`. В `{}` и `[]` ссылка `${VAR}` требует кавычек.
 - `true`, `123` в списке `command` YAML читает как boolean и число; сообщение об ошибке подсказывает про кавычки.
-- Нужен restic >= 0.17: только с него «репо нет» = код 10 и «неверный пароль» = код 12. На старом restic отсутствующий
-  репо даёт код 1 и считается `unreachable`, то есть init не произойдёт (безопасно, но молча не работает).
+- Нужен restic >= 0.17 (о старом предупреждают `rescaded` и `run --local`; в Ubuntu 24.04 из apt 0.16.4): только
+  с него «репо нет» = код 10 и «неверный пароль» = код 12. На старом restic отсутствующий репо даёт код 1 и считается `unreachable`, то есть init не произойдёт (безопасно, но молча не работает).
 - С `--json` ошибки restic в stderr тоже JSON, последняя строка `{"message_type":"exit_error",...}`; для лога и причины
   отказа они переводятся в текст (`readableBackupLine`).
 - Недоступный REST/S3-бэкенд restic ретраит минутами (`cat config` на закрытый порт не закончился за 2 минуты),
@@ -100,5 +113,15 @@ API под `/api`, остальные пути отдают собранный �
 - Ответ 401 сбрасывает токен, только если он тот же, с которым ушёл запрос: иначе поздние 401 от неверного токена
   стирали только что введённый верный.
 - happy-dom в тестах печатает `socket hang up` при отмене fetch (SSE при уходе со страницы), это не ошибка.
+- В alpine `env` из BusyBox без `-S`, шебанг демона там не работает: в образе `rescaded`/`rescade` — обёртки на `sh`.
+- `pnpm deploy` копирует пакет целиком, если нет `files`; у всех пакетов `"files": ["dist"]`. Зависимости `web`
+  (React и т. п.) в `devDependencies`: в рантайме нужен только собранный `dist`.
+- Стадии сборки в `Dockerfile` идут на `$BUILDPLATFORM`: результат — JS без нативных модулей, restic качается под
+  `TARGETARCH`; эмуляция arm64 нужна только для `apk add` последней стадии. При смене версии restic обновить обе суммы.
+- На Docker Desktop для macOS restic не читает файлы с bind mount (ФС `fakeowner`): после `open` он включает
+  `O_NOATIME` через `fcntl(F_SETFL)`, и `read` даёт `EIO` (`cat` и `open(..., O_NOATIME)` при этом работают).
+  Проверять образ там на именованных томах; на Linux-хосте bind mount обычный.
+- `RESTIC_HOST` в окружении restic — не только имя для `backup`, но и фильтр по умолчанию в `forget`, `copy`, `check`,
+  `snapshots` (restic 0.19.1). Имя хоста в контейнере фиксируется `hostname:` в compose, а не этой переменной.
 - В режиме `--allow-missing-env` значения подменяются на `<NAME is unset>`: годится для валидации, не для запуска
   (список в `LoadResult.missingEnv`).

@@ -1,0 +1,40 @@
+# Paths are as the container sees them: sources under /host, the local repo under /backups
+# (see the volumes in ../docker-compose.yaml).
+
+repos:
+  home-local:
+    path: /backups/home
+    password: ${HOME_LOCAL_PASSWORD}
+    retention: { hourly: 24, daily: 7, weekly: 4, monthly: 12 }
+
+  home-offsite:
+    path: sftp:backup.example.lan:backups/home
+    password: ${HOME_OFFSITE_PASSWORD}
+    from: home-local
+    retention: { daily: 30, weekly: 12, monthly: 24 }
+
+sets:
+  home:
+    include: [/host/home, /host/etc]
+    exclude:
+      - "/host/home/*/.cache"
+      - "**/node_modules"
+
+cascades:
+  home:
+    description: Home and /etc, copied off-site
+    schedule: "0 */6 * * *"
+    steps:
+      - backup: { set: home, repo: home-local }
+      - retain: { repo: home-local }
+      - copy: { from: home-local, to: home-offsite }
+      - retain: { repo: home-offsite }
+
+  maintenance:
+    description: Weekly prune, on its own because prune locks the repo exclusively
+    schedule: "0 4 * * 0"
+    on-busy: wait
+    wait-timeout: 6h
+    steps:
+      - prune: { repo: home-local }
+      - prune: { repo: home-offsite }
