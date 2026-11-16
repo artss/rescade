@@ -15,6 +15,7 @@ import {
   type ResticContext,
   type Runner,
   type RunnerEvent,
+  type RunState,
   type Scheduler,
   type Store,
 } from "@rescade/core";
@@ -102,6 +103,9 @@ const browseErrors: Array<number | [number, string]> = [
   502,
   504,
 ];
+
+/** Statuses of a run that has an outcome; `skipped` and `cancelled` say nothing about the backups. */
+const FINISHED = new Set<RunState>(["success", "warning", "failed", "interrupted"]);
 
 const nameParams = { type: "object", properties: { name: { type: "string" } }, required: ["name"] } as const;
 
@@ -259,6 +263,40 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
         active: active.get(name) ?? null,
         lastRun: deps.store.runs({ cascade: name, limit: 1 })[0] ?? null,
       }));
+    },
+  );
+
+  app.get(
+    `${API_PREFIX}/summary`,
+    {
+      schema: {
+        summary: "Counts of cascades by their latest outcome, the nearest runs and repos with problems",
+        description: "Flat fields for dashboards that cannot aggregate, such as the homepage `customapi` widget.",
+        response: responses(200, "Summary", ref("Summary")),
+      },
+    },
+    async () => {
+      const config = deps.config();
+      const names = Object.keys(config.cascades);
+      const active = deps.runner.running();
+      const latest = names.flatMap(
+        (name) => deps.store.runs({ cascade: name, limit: 20 }).find((r) => FINISHED.has(r.status)) ?? [],
+      );
+      const outcome = (...statuses: RunState[]) => latest.filter((r) => statuses.includes(r.status)).length;
+      const nextRuns = names.flatMap((name) => deps.scheduler.nextRun(name)?.getTime() ?? []);
+      const repos = deps.repos.list(config, deps.runner.locks);
+      return {
+        cascades: names.length,
+        running: active.filter((r) => r.status === "running").length,
+        queued: active.filter((r) => r.status === "queued").length,
+        success: outcome("success"),
+        warning: outcome("warning"),
+        failed: outcome("failed", "interrupted"),
+        lastRunAt: latest.length > 0 ? Math.max(...latest.map((r) => r.finishedAt ?? r.startedAt)) : null,
+        nextRunAt: nextRuns.length > 0 ? Math.min(...nextRuns) : null,
+        repos: repos.length,
+        repoProblems: repos.filter((r) => r.state !== "ok" && r.state !== "unknown").length,
+      };
     },
   );
 

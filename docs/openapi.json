@@ -756,6 +756,70 @@
           "config"
         ]
       },
+      "Summary": {
+        "type": "object",
+        "description": "Flat counts for dashboards such as the homepage `customapi` widget",
+        "properties": {
+          "cascades": {
+            "type": "integer",
+            "description": "Cascades in the config"
+          },
+          "running": {
+            "type": "integer",
+            "description": "Runs in progress"
+          },
+          "queued": {
+            "type": "integer",
+            "description": "Runs waiting for busy repos"
+          },
+          "success": {
+            "type": "integer",
+            "description": "Cascades whose latest finished run succeeded"
+          },
+          "warning": {
+            "type": "integer",
+            "description": "Cascades whose latest finished run ended with a warning"
+          },
+          "failed": {
+            "type": "integer",
+            "description": "Cascades whose latest finished run failed or was interrupted"
+          },
+          "lastRunAt": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Epoch milliseconds; when the latest finished run ended, null before any"
+          },
+          "nextRunAt": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Epoch milliseconds; the nearest scheduled run, null when nothing is scheduled"
+          },
+          "repos": {
+            "type": "integer",
+            "description": "Repos in the config"
+          },
+          "repoProblems": {
+            "type": "integer",
+            "description": "Repos whose last check failed (unreachable, wrong password and the like)"
+          }
+        },
+        "required": [
+          "cascades",
+          "running",
+          "queued",
+          "success",
+          "warning",
+          "failed",
+          "lastRunAt",
+          "nextRunAt",
+          "repos",
+          "repoProblems"
+        ]
+      },
       "Snapshot": {
         "type": "object",
         "properties": {
@@ -1064,6 +1128,44 @@
                   "items": {
                     "$ref": "#/components/schemas/Cascade"
                   }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Host not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/summary": {
+      "get": {
+        "summary": "Counts of cascades by their latest outcome, the nearest runs and repos with problems",
+        "description": "Flat fields for dashboards that cannot aggregate, such as the homepage `customapi` widget.",
+        "responses": {
+          "200": {
+            "description": "Summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Summary"
                 }
               }
             }
