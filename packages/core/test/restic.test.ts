@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { resticCommand, runProcess } from "../src/index.js";
-import { backupArgs, forgetArgs } from "../src/restic/restic.js";
+import { backupArgs, failureReason, forgetArgs } from "../src/restic/restic.js";
 import { repo } from "./helpers/fake.js";
 
 describe("resticCommand", () => {
@@ -136,5 +136,32 @@ describe("runProcess", () => {
 
     const r = await runProcess({ command: "/bin/sh", args: ["-c", "exit 0"], env: {}, signal: ac.signal });
     expect(r).toMatchObject({ cancelled: true, code: null });
+  });
+});
+
+describe("failureReason", () => {
+  it("is the last non-empty line", () => {
+    expect(failureReason(["a", "Fatal: b", ""])).toBe("Fatal: b");
+    expect(failureReason(["", " "])).toBeUndefined();
+  });
+
+  it("adds the last line of ssh or rclone", () => {
+    const tail = ["subprocess rclone: old", "subprocess rclone: Failed to create file system: no remote", "Fatal: EOF"];
+    expect(failureReason(tail)).toBe("Fatal: EOF (rclone: Failed to create file system: no remote)");
+  });
+
+  it("hints at known_hosts when ssh rejects the host key", () => {
+    const r = failureReason(["subprocess ssh: Host key verification failed.", "Fatal: unable to open repository"]);
+    expect(r).toMatch(/^Fatal: unable to open repository \(ssh: Host key verification failed\.; .*~\/\.ssh\/known_hosts/);
+  });
+
+  it("does not take ssh's notice about a new host key for a reason", () => {
+    const tail = ["subprocess ssh: Warning: Permanently added 'h' (ED25519) to the list of known hosts.", "Fatal: x"];
+    expect(failureReason(tail)).toBe("Fatal: x");
+  });
+
+  it("passes only restic's own line through readable", () => {
+    const r = failureReason(["subprocess ssh: x", '{"message":"m"}'], (l) => (JSON.parse(l) as { message: string }).message);
+    expect(r).toBe("m (ssh: x)");
   });
 });

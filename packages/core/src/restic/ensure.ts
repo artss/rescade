@@ -4,6 +4,7 @@ import {
   DEFAULT_REPO_CHECK_TIMEOUT_MS,
   execRestic,
   EXIT,
+  failureReason,
   initArgs,
   type ResticContext,
 } from "./restic.js";
@@ -27,7 +28,7 @@ type ConfigResult = { ok: true; config: RepoConfig } | Failure;
 /** Within one step a repo is checked once (copy may reach the same repo as target and as `from`). */
 export type EnsureMemo = Map<string, Promise<EnsureResult>>;
 
-const lastLine = (r: ProcessResult): string => r.stderrTail.filter((l) => l.trim() !== "").at(-1) ?? "no output";
+const lastLine = (r: ProcessResult): string => failureReason(r.stderrTail) ?? "no output";
 
 /**
  * Makes sure the repo exists: `restic cat config`, and on exit code 10 `restic init`

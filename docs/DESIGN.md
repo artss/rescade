@@ -189,7 +189,8 @@ Fastify (+ `@fastify/swagger`: OpenAPI по схемам маршрутов, `@f
   Многоступенчатая сборка: pnpm-сборка, затем только prod-зависимости (`pnpm deploy --prod`) на `node:22-alpine`
   (на новую LTS переедем отдельно).
 - restic берётся бинарником с GitHub-релиза фиксированной версии со сверкой SHA-256 (в пакетах дистрибутивов
-  бывает старше 0.17). В образе также `openssh-client` (sftp), `ca-certificates`, `tzdata`; `rclone` не входит.
+  бывает старше 0.17). В образе также `openssh-client` (sftp, с `StrictHostKeyChecking accept-new` и
+  `known_hosts` в `/var/lib/rescade`), `ca-certificates`, `tzdata`; `rclone` не входит.
 - PID 1 — `tini`: демон убивает группы процессов, но осиротевших внуков кто-то должен пожинать.
 - Процесс работает от root: restic должен читать любые файлы источников. Источники монтируются только для чтения.
 - Внутри контейнера `RESCADE_ADDR=0.0.0.0:8765`, `RESCADE_CONFIG_DIR=/etc/rescade/config` (только чтение),

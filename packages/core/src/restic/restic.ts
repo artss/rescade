@@ -30,6 +30,29 @@ export interface ResticContext {
 
 export const DEFAULT_REPO_CHECK_TIMEOUT_MS = 2 * 60 * 1000;
 
+/** restic passes on the stderr of ssh (sftp backend) and rclone with this prefix. */
+const SUBPROCESS_LINE = /^subprocess ([\w.-]+): (.+)$/;
+
+/**
+ * The reason for a failed restic call: its last stderr line (through `readable`, for `--json` errors).
+ * restic only says that the ssh or rclone connection closed, so their own last word is added:
+ * without a tty ssh cannot ask about an unknown host key and fails with "Host key verification failed."
+ */
+export function failureReason(stderrTail: string[], readable: (line: string) => string = (l) => l): string | undefined {
+  const lines = stderrTail.filter((l) => l.trim() !== "");
+  const last = lines.at(-1);
+  if (last === undefined) return undefined;
+  // with accept-new ssh announces every new host key; that is no reason for a failure
+  const sub = [...lines].reverse().find((l) => SUBPROCESS_LINE.test(l) && !/: Warning: Permanently added /.test(l));
+  if (sub === undefined || sub === last) return readable(last);
+  const [, program, message] = SUBPROCESS_LINE.exec(sub)!;
+  const hint = /Host key verification failed/.test(message!)
+    ? "; the host key is unknown or has changed: check ~/.ssh/known_hosts of the user running rescade " +
+      "(in the Docker image /var/lib/rescade/known_hosts)"
+    : "";
+  return `${readable(last)} (${program}: ${message}${hint})`;
+}
+
 /** Variables that pick a repository or its password; rescade sets these itself. */
 export const OWN_VARS = new Set(
   ["REPOSITORY", "REPOSITORY_FILE", "PASSWORD", "PASSWORD_FILE", "PASSWORD_COMMAND"].flatMap((v) => [

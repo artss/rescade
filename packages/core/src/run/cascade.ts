@@ -8,6 +8,7 @@ import {
   copyArgs,
   execRestic,
   EXIT,
+  failureReason,
   forgetArgs,
   pruneArgs,
   type ResticContext,
@@ -292,7 +293,7 @@ function fromProcess(r: ProcessResult, what: string, timeoutMs?: number): Outcom
   }
   if (r.code === EXIT.ok) return { status: "success", exitCode: 0 };
 
-  const last = r.stderrTail.filter((l) => l.trim() !== "").at(-1);
+  const last = failureReason(r.stderrTail);
   return {
     status: "failed",
     ...(r.code === null ? {} : { exitCode: r.code }),

@@ -43,6 +43,11 @@ RUN printf '#!/bin/sh\nexec node --disable-warning=ExperimentalWarning /opt/resc
  && printf '#!/bin/sh\nexec node /opt/rescade/cli/dist/index.js "$@"\n' > /usr/local/bin/rescade \
  && chmod +x /usr/local/bin/rescaded /usr/local/bin/rescade \
  && mkdir -p /etc/rescade/config /var/lib/rescade
+# restic runs ssh without a terminal, so nobody can confirm an unknown host key: the first one is remembered
+# (a changed key still fails), in the data volume so that recreating the container does not forget it;
+# a ~/.ssh/config of its own takes precedence
+RUN printf '%s\n' 'Host *' '    StrictHostKeyChecking accept-new' \
+      '    UserKnownHostsFile /var/lib/rescade/known_hosts ~/.ssh/known_hosts' > /etc/ssh/ssh_config.d/rescade.conf
 
 ENV RESCADE_ADDR=0.0.0.0:8765 \
     RESCADE_URL=http://127.0.0.1:8765 \

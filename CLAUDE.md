@@ -29,7 +29,7 @@ API под `/api`, остальные пути отдают собранный �
 Просмотр снапшотов (`src/restic/snapshots.ts`: `restic snapshots`/`ls` без мьютекса, `--retry-lock 10s`; маршруты
 `/api/repos/:name/snapshots[/:id/ls]`, CLI `snapshots` и `ls`, страницы `pages/Snapshots.tsx`; у шага backup поле
 `repo`, схема базы v2 с миграцией в `Store.open`). Бэкенды restic (`src/config/backends.ts`: префикс `path`, опции по бэкенду, конфликты `env`/`options` в парах
-`copy`/`from`; описание в `docs/backends.md`). 221 тест vitest (проекты `node` и `web`), фейковый restic в `packages/core/test/fake-restic.mjs`, 8 интеграционных с настоящим restic
+`copy`/`from`; описание в `docs/backends.md`). 227 тестов vitest (проекты `node` и `web`), фейковый restic в `packages/core/test/fake-restic.mjs`, 8 интеграционных с настоящим restic
 (проверено на 0.19.1), пример в `examples/config`.
 
 Шаги 1–7 из DESIGN.md сделаны. Шаг 8: `Dockerfile`, `.github/workflows/ci.yaml` (тесты, затем образ
@@ -125,6 +125,12 @@ SIGHUP, `interrupted` после `docker stop` и после `kill -9`).
   Проверять образ там на именованных томах; на Linux-хосте bind mount обычный.
 - `RESTIC_HOST` в окружении restic — не только имя для `backup`, но и фильтр по умолчанию в `forget`, `copy`, `check`,
   `snapshots` (restic 0.19.1). Имя хоста в контейнере фиксируется `hostname:` в compose, а не этой переменной.
+- sftp на хост не из `known_hosts`: ssh без терминала (дочерние процессы в своей сессии) пишет `Host key verification
+  failed.`, restic передаёт это строкой `subprocess ssh: ...` и падает с кодом 1 и `unexpected EOF`. Причину собирает
+  `failureReason` (`restic.ts`): последняя строка плюс последнее слово ssh/rclone. В образе поэтому `accept-new`,
+  `known_hosts` в томе `/var/lib/rescade` (в `/root/.ssh` он пропадал бы при пересоздании контейнера).
+- Смонтированный `/root/.ssh` сохраняет uid с хоста: `config` не от root ssh отвергает (`Bad owner or permissions`),
+  ключ от root с правами шире 600 игнорирует, ключ чужого uid не проверяет вовсе (проверено на OpenSSH 10.3 в образе).
 - `restic ls <id> <path>` на отсутствующий путь ничего не выводит и выходит с 0; каталог сам идёт первой строкой узлов
   (кроме `/`), по этому и отличаем «нет пути» от пустого каталога. Неизвестный id: код 1, `no matching ID found`.
 - Схема SQLite меняется через `MIGRATIONS` в `store.ts` (ключ = версия, с которой обновляем) и `SCHEMA_VERSION`;

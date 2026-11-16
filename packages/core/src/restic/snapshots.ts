@@ -1,5 +1,5 @@
 import path from "node:path";
-import { DEFAULT_REPO_CHECK_TIMEOUT_MS, execRestic, EXIT, type ResticContext } from "./restic.js";
+import { DEFAULT_REPO_CHECK_TIMEOUT_MS, execRestic, EXIT, failureReason, type ResticContext } from "./restic.js";
 
 /** A snapshot as `restic snapshots --json` shows it; the summary fields come from restic 0.17+. */
 export interface Snapshot {
@@ -141,8 +141,7 @@ async function call(
   if (r.spawnError !== undefined) return { ok: false, problem: "failed", reason: `cannot start restic: ${r.spawnError}` };
   if (r.code === EXIT.ok) return { ok: true, value: stdout };
 
-  const last = r.stderrTail.filter((l) => l.trim() !== "").at(-1);
-  const reason = last === undefined ? `restic ${args[0]} failed (exit code ${r.code})` : readable(last);
+  const reason = failureReason(r.stderrTail, readable) ?? `restic ${args[0]} failed (exit code ${r.code})`;
   if (r.code === EXIT.lockFailed) return { ok: false, problem: "locked", reason };
   if (/no matching ID found/.test(reason)) return { ok: false, problem: "not-found", reason };
   return { ok: false, problem: "failed", reason };
