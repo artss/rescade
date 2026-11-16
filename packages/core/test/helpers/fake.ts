@@ -72,6 +72,17 @@ export class FakeState {
     writeFileSync(path.join(this.dir, "locks", encodeURIComponent(repoPath) + ".json"), JSON.stringify(locks));
   }
 
+  /** Snapshots as `restic snapshots --json` shows them, and the nodes `restic ls` finds in each. */
+  writeSnapshots(repoPath: string, snapshots: Array<Record<string, unknown>>, nodes: Record<string, Array<Record<string, unknown>>> = {}): void {
+    mkdirSync(path.join(this.dir, "snapshots"), { recursive: true });
+    writeFileSync(path.join(this.dir, "snapshots", encodeURIComponent(repoPath) + ".json"), JSON.stringify({ snapshots, nodes }));
+  }
+
+  readSnapshots(repoPath: string): Array<Record<string, unknown>> {
+    const f = path.join(this.dir, "snapshots", encodeURIComponent(repoPath) + ".json");
+    return existsSync(f) ? (JSON.parse(readFileSync(f, "utf8")) as { snapshots: Array<Record<string, unknown>> }).snapshots : [];
+  }
+
   get sigtermReceived(): boolean {
     return existsSync(path.join(this.dir, "sigterm"));
   }

@@ -1,3 +1,4 @@
+import { Link } from "wouter";
 import { useRepos } from "../queries.js";
 import type { RepoView } from "../types.js";
 import { Badge } from "../components/Badge.js";
@@ -6,6 +7,7 @@ import { ErrorBox } from "../components/ErrorBox.js";
 import { Loading } from "../components/Loading.js";
 import { RunLink } from "../components/RunLink.js";
 import { Time } from "../components/Time.js";
+import { snapshotsHref } from "./Snapshots.js";
 
 export function ReposPage() {
   const { data, error } = useRepos();
@@ -35,6 +37,9 @@ function RepoCard({ repo: r }: { repo: RepoView }) {
         <h2 className="font-semibold">{r.name}</h2>
         <Badge status={r.state} />
         <span className="break-all font-mono text-xs text-zinc-500">{r.location}</span>
+        <Link href={snapshotsHref(r.name)} className="ml-auto text-sm text-sky-700 hover:underline dark:text-sky-400">
+          Snapshots
+        </Link>
       </div>
       {r.reason && <p className="mt-1 text-sm">{r.reason}</p>}
       <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">

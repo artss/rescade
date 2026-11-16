@@ -164,6 +164,44 @@ describe("the CLI through the daemon", () => {
     expect(repos.stdout).toContain('run "restic unlock"');
   });
 
+  it("lists snapshots and browses one", async () => {
+    const id = "c".repeat(64);
+    fake.writeSnapshots(
+      "/r/a",
+      [
+        {
+          time: "2026-11-01T10:00:00Z",
+          paths: ["/home"],
+          hostname: "nas",
+          username: "root",
+          tags: ["auto", "daily"],
+          summary: { total_bytes_processed: 3 * 1024 * 1024 },
+          id,
+          short_id: id.slice(0, 8),
+        },
+      ],
+      {
+        [id]: [
+          { name: "home", type: "dir", path: "/home", permissions: "drwxr-xr-x" },
+          { name: "z.txt", type: "file", path: "/home/z.txt", size: 10, permissions: "-rw-r--r--", mtime: "2026-11-01T10:00:00Z" },
+          { name: "u", type: "dir", path: "/home/u", permissions: "drwx------", mtime: "2026-11-01T10:00:00Z" },
+        ],
+      },
+    );
+    const list = await cli(["snapshots", "a"]);
+    expect(list.stdout).toMatch(/^ID +TIME +HOST +SIZE +TAGS +PATHS\ncccccccc +\S+ \S+ +nas +3\.0 MiB +auto,daily +\/home\n$/);
+    expect((await cli(["snapshots", "b"])).stdout).toBe('no snapshots in "b"\n');
+
+    const ls = await cli(["ls", "a", "cccccccc", "/home"]);
+    expect(ls.stdout).toMatch(/^drwx------ +\S+ \S+ +u\/\n-rw-r--r-- +10 B +\S+ \S+ +z\.txt\n$/);
+    expect((await cli(["ls", "a", id])).stdout).toMatch(/^drwxr-xr-x +home\/\n$/);
+
+    const missing = await cli(["ls", "a", id, "/nope"]);
+    expect(missing.code).toBe(1);
+    expect(missing.stderr).toBe("rescade: no /nope in snapshot cccccccc\n");
+    expect((await cli(["ls", "a"])).stderr).toBe("rescade: ls needs a repo, a snapshot id and optionally a path\n");
+  });
+
   it("cancels the followed run on Ctrl+C", async () => {
     let sent = false;
     const r = await cli(["run", "slow"], {}, (text, kill) => {

@@ -37,6 +37,17 @@ export function formatTime(ms: number): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
+/** "512 B", "1.5 KiB", "3.2 GiB". */
+export function formatBytes(n: number): string {
+  const units = ["B", "KiB", "MiB", "GiB", "TiB"];
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) {
+    n /= 1024;
+    i++;
+  }
+  return i === 0 ? `${n} B` : `${n.toFixed(1)} ${units[i]}`;
+}
+
 /** Rows as columns padded to the widest cell; the last column is not padded. */
 export function table(rows: string[][]): string {
   const widths: number[] = [];

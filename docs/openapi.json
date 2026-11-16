@@ -135,6 +135,10 @@
             "type": "object",
             "additionalProperties": true,
             "description": "backup: restic's JSON summary"
+          },
+          "repo": {
+            "type": "string",
+            "description": "backup: the repo the snapshot (`summary.snapshot_id`) goes to"
           }
         },
         "required": [
@@ -600,6 +604,123 @@
           "version",
           "startedAt",
           "config"
+        ]
+      },
+      "Snapshot": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "shortId": {
+            "type": "string"
+          },
+          "time": {
+            "type": "integer",
+            "description": "Epoch milliseconds"
+          },
+          "hostname": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "parent": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "description": "Bytes of the files in the snapshot (restic 0.17+)"
+          },
+          "files": {
+            "type": "integer",
+            "description": "Files in the snapshot (restic 0.17+)"
+          },
+          "dataAdded": {
+            "type": "integer",
+            "description": "Bytes the backup added to the repo, before compression (restic 0.17+)"
+          }
+        },
+        "required": [
+          "id",
+          "shortId",
+          "time",
+          "hostname",
+          "username",
+          "paths",
+          "tags"
+        ]
+      },
+      "SnapshotEntry": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "description": "`dir`, `file`, `symlink` and other restic node types"
+          },
+          "path": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "mtime": {
+            "type": "integer",
+            "description": "Epoch milliseconds"
+          },
+          "permissions": {
+            "type": "string",
+            "description": "e.g. `drwxr-xr-x`"
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "path"
+        ]
+      },
+      "SnapshotDir": {
+        "type": "object",
+        "properties": {
+          "snapshot": {
+            "$ref": "#/components/schemas/Snapshot"
+          },
+          "path": {
+            "type": "string",
+            "description": "The listed path, normalized"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SnapshotEntry"
+            },
+            "description": "What is directly in `path`; for a file, the file itself"
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "The directory has more than 10000 entries; the rest is left out"
+          }
+        },
+        "required": [
+          "snapshot",
+          "path",
+          "entries",
+          "truncated"
         ]
       },
       "RunEvent": {
@@ -1250,6 +1371,227 @@
           },
           "403": {
             "description": "Host not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/repos/{name}/snapshots": {
+      "get": {
+        "summary": "Snapshots of a repo, newest first",
+        "description": "Runs `restic snapshots`. Takes no rescade lock: it works during a backup and waits briefly for a prune.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "name",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Snapshots",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Snapshots",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Snapshot"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Host not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such repo, snapshot or path",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "An exclusive lock (prune) held the repo longer than restic waits",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "restic failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The repo did not answer in time",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/repos/{name}/snapshots/{id}/ls": {
+      "get": {
+        "summary": "What is directly in a directory of a snapshot",
+        "description": "Runs `restic ls` for one directory, so a large tree is browsed a level at a time. At most 10000 entries come back (`truncated` tells). File names from backups are visible to anyone with the token.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^/",
+              "default": "/"
+            },
+            "in": "query",
+            "name": "path",
+            "required": false,
+            "description": "Absolute path in the snapshot"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "name",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8,64}$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "Snapshot id, full or at least 8 characters"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The directory",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotDir"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Host not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such repo, snapshot or path",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "An exclusive lock (prune) held the repo longer than restic waits",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "restic failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The repo did not answer in time",
             "content": {
               "application/json": {
                 "schema": {

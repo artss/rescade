@@ -6,6 +6,7 @@ import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { loadConfig, type Config, type LogRecord, type RunRecord, type StepRecord } from "@rescade/core";
 import { RepoStates } from "../src/repos.js";
+import { FAKE_RESTIC, FakeState } from "../../core/test/helpers/fake.js";
 import { buildServer, DOCS_PATH, HEALTH_PATH, OPENAPI_PATH, type DaemonStatus, type ServerDeps } from "../src/server.js";
 
 const TOKEN = "test-token-0123456789";
@@ -33,7 +34,21 @@ const step: StepRecord = {
   reason: "restic exited with code 1",
   stderrTail: ["Fatal: oops"],
   summary: { files_new: 3, nested: { list: [1, 2] } },
+  repo: "a",
 };
+const SNAP = "5".repeat(64);
+const snapshot = {
+  time: "2026-11-01T10:00:00Z",
+  paths: ["/home"],
+  hostname: "box",
+  username: "root",
+  tags: ["auto"],
+  parent: "4".repeat(64),
+  summary: { total_bytes_processed: 5000, total_files_processed: 3, data_added: 1200 },
+  id: SNAP,
+  short_id: SNAP.slice(0, 8),
+};
+const node = { name: "f", type: "file", path: "/home/f", size: 3, permissions: "-rw-r--r--", mtime: "2026-11-01T10:00:00Z" };
 const log: LogRecord = { id: 3, step: 0, ts: 1500, stream: "stderr", line: "Fatal: oops" };
 const status: DaemonStatus = {
   version: "1.2.3",
@@ -42,6 +57,7 @@ const status: DaemonStatus = {
 };
 
 let dir: string;
+let fake: FakeState;
 let deps: ServerDeps;
 let app: FastifyInstance;
 let serialized: unknown;
@@ -71,6 +87,9 @@ cascades:
   const loaded = await loadConfig({ path: file });
   if (!loaded.ok) throw new Error("test config has errors");
   const config: Config = loaded.config;
+  fake = await FakeState.create();
+  fake.writeRepo("rest:https://user:secret@host/a", "pw");
+  fake.writeSnapshots("rest:https://user:secret@host/a", [snapshot], { [SNAP]: [{ ...node, path: "/home", name: "home", type: "dir" }, node] });
 
   const repos = new RepoStates();
   const lock = { id: "f".repeat(64), time: 1200, exclusive: true, hostname: "h", username: "u", pid: 42, stale: true };
@@ -100,6 +119,7 @@ cascades:
     scheduler: { nextRun: () => new Date(5000) },
     store: { runs: () => [run], run: () => ({ ...run, steps: [step] }), log: () => [log] },
     repos,
+    restic: { binary: FAKE_RESTIC, env: fake.env() },
     token: TOKEN,
     allowedHosts: new Set([HOST]),
     corsOrigins: new Set<string>(),
@@ -117,6 +137,7 @@ cascades:
 afterAll(async () => {
   await app.close();
   await rm(dir, { recursive: true, force: true });
+  await fake.remove();
 });
 
 async function call(method: "GET" | "POST", url: string, headers: Record<string, string> = {}) {
@@ -135,6 +156,8 @@ describe("response schemas", () => {
     ["GET", "/api/runs/7/log", 200],
     ["POST", "/api/runs/7/cancel", 202],
     ["GET", "/api/repos", 200],
+    ["GET", "/api/repos/a/snapshots", 200],
+    ["GET", `/api/repos/a/snapshots/${SNAP}/ls?path=/home`, 200],
   ] as const)("%s %s keeps every field", async (method, url, status) => {
     const res = await call(method, url);
     expect(res.status).toBe(status);
@@ -148,6 +171,40 @@ describe("response schemas", () => {
       { location: "rest:https://user:***@host/a", locks: { count: 11, error: "partly read" } },
       { state: "unreachable", lockedBy: { runId: 7 } },
     ]);
+  });
+});
+
+describe("snapshots", () => {
+  it("lists the snapshots and a directory of one", async () => {
+    expect((await call("GET", "/api/repos/a/snapshots")).body).toMatchObject([{ id: SNAP, size: 5000, tags: ["auto"] }]);
+    expect((await call("GET", `/api/repos/a/snapshots/${SNAP.slice(0, 8)}/ls?path=/home/`)).body).toMatchObject({
+      path: "/home",
+      entries: [{ name: "f", size: 3 }],
+      truncated: false,
+    });
+    expect((await call("GET", `/api/repos/a/snapshots/${SNAP}/ls`)).body.entries).toMatchObject([{ path: "/home" }]);
+  });
+
+  it("answers what went wrong with a status of its own", async () => {
+    expect(await call("GET", "/api/repos/nope/snapshots")).toEqual({ status: 404, body: { error: 'unknown repo "nope"' } });
+    expect((await call("GET", `/api/repos/a/snapshots/${SNAP}/ls?path=/nope`)).status).toBe(404);
+    expect((await call("GET", "/api/repos/a/snapshots/abcdef12/ls")).status).toBe(404);
+    expect((await call("GET", "/api/repos/a/snapshots/--help/ls")).status).toBe(400);
+    expect((await call("GET", `/api/repos/a/snapshots/${SNAP}/ls?path=home`)).status).toBe(400);
+    // b has no repo in the fake: restic exits with code 10
+    expect((await call("GET", "/api/repos/b/snapshots")).status).toBe(502);
+
+    const env = deps.restic.env;
+    try {
+      deps.restic.env = fake.env({ FAKE_RESTIC_EXIT_SNAPSHOTS: "11" });
+      expect(await call("GET", "/api/repos/a/snapshots")).toEqual({ status: 409, body: { error: "fake failure in snapshots" } });
+      deps.restic.env = fake.env({ FAKE_RESTIC_HANG: "snapshots" });
+      deps.restic.repoCheckTimeoutMs = 200;
+      expect((await call("GET", "/api/repos/a/snapshots")).status).toBe(504);
+    } finally {
+      deps.restic.env = env;
+      delete deps.restic.repoCheckTimeoutMs;
+    }
   });
 });
 
@@ -244,6 +301,8 @@ describe("OpenAPI document", () => {
       "GET /api/events",
       "GET /api/health",
       "GET /api/repos",
+      "GET /api/repos/{name}/snapshots",
+      "GET /api/repos/{name}/snapshots/{id}/ls",
       "GET /api/runs",
       "GET /api/runs/{id}",
       "GET /api/runs/{id}/log",

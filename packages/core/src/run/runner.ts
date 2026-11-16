@@ -99,7 +99,10 @@ export class Runner {
       this.emit({ kind: "run", run: { ...run } });
     };
 
-    const step = (index: number, label: string) => ({ runId: run.id, index, type: cascade.steps[index]!.type, label });
+    const step = (index: number, label: string) => {
+      const s = cascade.steps[index]!;
+      return { runId: run.id, index, type: s.type, label, ...(s.type === "backup" ? { repo: s.repo } : {}) };
+    };
     const onEvent = (e: RunEvent) => {
       switch (e.kind) {
         case "step-wait":
@@ -117,7 +120,7 @@ export class Runner {
         }
         case "step-end": {
           const status = this.stopping && e.result.status === "cancelled" ? "interrupted" : e.result.status;
-          this.saveStep({ runId: run.id, ...e.result, status });
+          this.saveStep({ ...step(e.result.index, e.result.label), ...e.result, status });
           return;
         }
       }

@@ -59,6 +59,9 @@ describe("runner", () => {
       ["retain a", "success"],
     ]);
     expect(run.steps[0]?.summary).toMatchObject({ files_new: 2 });
+    // the run page links the snapshot of a backup step to its repo
+    expect(run.steps.map((s) => s.repo)).toEqual(["a", undefined]);
+    expect(fake.readSnapshots("/r/a").map((s) => s.id)).toEqual([run.steps[0]?.summary?.snapshot_id]);
     expect(store.log(started.id, { step: 1 }).map((l) => l.line)).toEqual(["Applying Policy: keep 7 daily snapshots"]);
     expect(store.log(started.id).some((l) => l.step === 0 && l.stream === "info")).toBe(true);
     const logEvents = events.flatMap((e) => (e.kind === "log" ? [e.log] : []));
@@ -258,6 +261,21 @@ describe("store", () => {
     });
     second.close();
     expect(existsSync(file)).toBe(true);
+  });
+
+  it("upgrades a database of schema version 1", async () => {
+    const file = path.join(fake.dir, "old.db");
+    const { DatabaseSync } = await import("node:sqlite");
+    (await Store.open(file)).close();
+    const raw = new DatabaseSync(file);
+    raw.exec("ALTER TABLE steps DROP COLUMN repo; PRAGMA user_version = 1;");
+    raw.close();
+
+    const upgraded = await Store.open(file);
+    const run = upgraded.insertRun({ cascade: "daily", trigger: "schedule", status: "running", startedAt: 5 });
+    upgraded.saveStep({ runId: run.id, index: 0, type: "backup", label: "backup s -> a", repo: "a", status: "running" });
+    expect(upgraded.run(run.id)?.steps[0]?.repo).toBe("a");
+    upgraded.close();
   });
 });
 

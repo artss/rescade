@@ -145,6 +145,7 @@ export async function startDaemon(settings: Settings, logger: Logger, options: D
       scheduler,
       store,
       repos,
+      restic: { binary: settings.restic, env: options.env, killGraceMs: options.killGraceMs, repoCheckTimeoutMs: settings.repoCheckTimeoutMs },
       token: settings.token,
       allowedHosts: hosts,
       corsOrigins: settings.corsOrigins,

@@ -266,6 +266,28 @@ describe("runs over the API", () => {
     expect(run.body.status).toBe("cancelled");
   });
 
+  it("lists snapshots of a repo held by a run, without waiting for it", async () => {
+    await start();
+    const started = await api("POST", "/api/cascades/slow/run");
+    await until(() => api("GET", "/api/repos"), (r) => r.body[1]?.lockedBy !== undefined, "slow to take repo b");
+    expect(await api("GET", "/api/repos/b/snapshots")).toMatchObject({ status: 200, body: [] });
+    await api("POST", `/api/runs/${started.body.id}/cancel`);
+  });
+
+  it("stops restic when the client of a snapshot query goes away", async () => {
+    await start(configYaml(), { FAKE_RESTIC_HANG: "snapshots" });
+    const port = daemon!.address.split(":").at(-1);
+    const ac = new AbortController();
+    const res = fetch(`http://127.0.0.1:${port}/api/repos/a/snapshots`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+      signal: ac.signal,
+    }).catch(() => undefined);
+    await until(async () => fake.calls().some((c) => c.cmd === "snapshots"), (v) => v, "restic snapshots to start");
+    ac.abort();
+    await res;
+    await until(async () => fake.sigtermReceived, (v) => v, "restic to get SIGTERM");
+  });
+
   it("streams events of a cascade over SSE", async () => {
     await start();
     const ac = new AbortController();

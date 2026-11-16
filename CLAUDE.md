@@ -26,14 +26,16 @@ API под `/api`, остальные пути отдают собранный �
 `packages/web`: веб-интерфейс (React, TanStack Query, Tailwind 4, Vite, `wouter`; `api.ts`/`token.ts` запросы и токен,
 `sse.ts` поток событий через fetch, `queries.ts` хуки и `applyEvent`, `log.ts` склейка лога по `id`, `pages/*`), демон
 находит его сборку через `import.meta.resolve("@rescade/web/package.json")`.
-Бэкенды restic (`src/config/backends.ts`: префикс `path`, опции по бэкенду, конфликты `env`/`options` в парах
-`copy`/`from`; описание в `docs/backends.md`). 201 тест vitest (проекты `node` и `web`), фейковый restic в `packages/core/test/fake-restic.mjs`, 7 интеграционных с настоящим restic
+Просмотр снапшотов (`src/restic/snapshots.ts`: `restic snapshots`/`ls` без мьютекса, `--retry-lock 10s`; маршруты
+`/api/repos/:name/snapshots[/:id/ls]`, CLI `snapshots` и `ls`, страницы `pages/Snapshots.tsx`; у шага backup поле
+`repo`, схема базы v2 с миграцией в `Store.open`). Бэкенды restic (`src/config/backends.ts`: префикс `path`, опции по бэкенду, конфликты `env`/`options` в парах
+`copy`/`from`; описание в `docs/backends.md`). 221 тест vitest (проекты `node` и `web`), фейковый restic в `packages/core/test/fake-restic.mjs`, 8 интеграционных с настоящим restic
 (проверено на 0.19.1), пример в `examples/config`.
 
 Шаги 1–7 из DESIGN.md сделаны. Шаг 8: `Dockerfile`, `.github/workflows/ci.yaml` (тесты, затем образ
 в `ghcr.io/artss/rescade` для amd64/arm64), пример `examples/docker`. Отложено: экран логов демона, уведомления, веб-редактор конфига.
 
-Следующий шаг (9): восстановление из бэкапа, дизайн ещё не обсуждался.
+Шаг 9 (восстановление): просмотр снапшотов сделан, сам restore ещё не обсуждался.
 
 Проверено на Linux: `pnpm test:integration` (restic 0.19.1 с релиза), образ с bind mount настоящих каталогов
 под `/host` (backup файлов только для root, родительский снапшот при повторе, `copy` с `from`, restore со снятием префикса,
@@ -123,5 +125,9 @@ SIGHUP, `interrupted` после `docker stop` и после `kill -9`).
   Проверять образ там на именованных томах; на Linux-хосте bind mount обычный.
 - `RESTIC_HOST` в окружении restic — не только имя для `backup`, но и фильтр по умолчанию в `forget`, `copy`, `check`,
   `snapshots` (restic 0.19.1). Имя хоста в контейнере фиксируется `hostname:` в compose, а не этой переменной.
+- `restic ls <id> <path>` на отсутствующий путь ничего не выводит и выходит с 0; каталог сам идёт первой строкой узлов
+  (кроме `/`), по этому и отличаем «нет пути» от пустого каталога. Неизвестный id: код 1, `no matching ID found`.
+- Схема SQLite меняется через `MIGRATIONS` в `store.ts` (ключ = версия, с которой обновляем) и `SCHEMA_VERSION`;
+  `SCHEMA` всегда описывает последнюю версию для новой базы.
 - В режиме `--allow-missing-env` значения подменяются на `<NAME is unset>`: годится для валидации, не для запуска
   (список в `LoadResult.missingEnv`).

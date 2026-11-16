@@ -4,7 +4,21 @@ import fastifyStatic from "@fastify/static";
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import Fastify, { LogController, type FastifyBaseLogger, type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
-import { describeStep, type Config, type Runner, type RunnerEvent, type Scheduler, type Store } from "@rescade/core";
+import {
+  describeStep,
+  listDir,
+  listSnapshots,
+  MAX_DIR_ENTRIES,
+  SNAPSHOT_ID,
+  type BrowseProblem,
+  type BrowseResult,
+  type Config,
+  type ResticContext,
+  type Runner,
+  type RunnerEvent,
+  type Scheduler,
+  type Store,
+} from "@rescade/core";
 import type { RepoStates } from "./repos.js";
 import { arrayOf, ref, schemas } from "./schemas.js";
 
@@ -27,6 +41,8 @@ export interface ServerDeps {
   scheduler: Scheduler;
   store: Store;
   repos: RepoStates;
+  /** How to run restic for browsing snapshots; the repos come from the current config. */
+  restic: Pick<ResticContext, "binary" | "env" | "killGraceMs" | "repoCheckTimeoutMs">;
   token: string;
   /** Host header values to accept, lower case; may be filled in after the server starts listening. */
   allowedHosts: Set<string>;
@@ -47,15 +63,46 @@ const errorText: Record<number, string> = {
   403: "Host not allowed",
   404: "Not found",
   409: "The run is not in progress",
+  502: "restic failed",
   503: "The daemon is stopping",
+  504: "The repo did not answer in time",
 };
 
-/** Response schemas by status code; every route can also answer 401 and 403 from the access check. */
-function responses(code: number, description: string, schema: object, ...errors: number[]): Record<number, unknown> {
+/**
+ * Response schemas by status code; every route can also answer 401 and 403 from the access check.
+ * An error is its code, or the code with a description of its own.
+ */
+function responses(
+  code: number,
+  description: string,
+  schema: object,
+  ...errors: Array<number | [number, string]>
+): Record<number, unknown> {
   const r: Record<number, unknown> = { [code]: { description, ...schema } };
-  for (const c of [...errors, 401, 403]) r[c] = { description: errorText[c], ...ref("Error") };
+  for (const e of [...errors, 401, 403]) {
+    const [c, text] = typeof e === "number" ? [e, errorText[e]] : e;
+    r[c] = { description: text, ...ref("Error") };
+  }
   return r;
 }
+
+/** HTTP status of a failed snapshot query. */
+const browseStatus: Record<BrowseProblem, number> = {
+  "not-found": 404,
+  locked: 409,
+  failed: 502,
+  "no-answer": 504,
+  cancelled: 503,
+};
+const browseErrors: Array<number | [number, string]> = [
+  400,
+  [404, "No such repo, snapshot or path"],
+  [409, "An exclusive lock (prune) held the repo longer than restic waits"],
+  502,
+  504,
+];
+
+const nameParams = { type: "object", properties: { name: { type: "string" } }, required: ["name"] } as const;
 
 /** The API lives under this prefix; other paths are the web UI, routed in the browser. */
 export const API_PREFIX = "/api";
@@ -337,6 +384,77 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
       },
     },
     async () => deps.repos.list(deps.config(), deps.runner.locks),
+  );
+
+  /**
+   * Runs a snapshot query on a repo of the current config. No repo mutex is taken: restic's own shared lock
+   * works next to a backup. restic is stopped when the client goes away.
+   */
+  async function browse<T>(
+    request: FastifyRequest,
+    reply: FastifyReply,
+    name: string,
+    query: (ctx: ResticContext) => Promise<BrowseResult<T>>,
+  ): Promise<T | FastifyReply> {
+    const repos = deps.config().repos;
+    if (!repos[name]) return reply.code(404).send({ error: `unknown repo "${name}"` });
+    const ac = new AbortController();
+    const onClose = () => {
+      if (!reply.raw.writableEnded) ac.abort();
+    };
+    reply.raw.on("close", onClose);
+    try {
+      const r = await query({ ...deps.restic, repos, signal: ac.signal });
+      if (r.ok) return r.value;
+      if (r.problem !== "cancelled") request.log.warn({ repo: name, problem: r.problem }, r.reason);
+      return reply.code(browseStatus[r.problem]).send({ error: r.reason });
+    } finally {
+      reply.raw.off("close", onClose);
+    }
+  }
+
+  app.get<{ Params: { name: string } }>(
+    `${API_PREFIX}/repos/:name/snapshots`,
+    {
+      schema: {
+        summary: "Snapshots of a repo, newest first",
+        description:
+          "Runs `restic snapshots`. Takes no rescade lock: it works during a backup and waits briefly for a prune.",
+        params: nameParams,
+        response: responses(200, "Snapshots", arrayOf("Snapshot"), ...browseErrors),
+      },
+    },
+    async (request, reply) => browse(request, reply, request.params.name, (ctx) => listSnapshots(ctx, request.params.name)),
+  );
+
+  app.get<{ Params: { name: string; id: string }; Querystring: { path: string } }>(
+    `${API_PREFIX}/repos/:name/snapshots/:id/ls`,
+    {
+      schema: {
+        summary: "What is directly in a directory of a snapshot",
+        description:
+          "Runs `restic ls` for one directory, so a large tree is browsed a level at a time. " +
+          `At most ${MAX_DIR_ENTRIES} entries come back (\`truncated\` tells). File names from backups are visible to anyone with the token.`,
+        params: {
+          type: "object",
+          properties: {
+            name: { type: "string" },
+            id: { type: "string", pattern: SNAPSHOT_ID.source, description: "Snapshot id, full or at least 8 characters" },
+          },
+          required: ["name", "id"],
+        },
+        querystring: {
+          type: "object",
+          properties: { path: { type: "string", pattern: "^/", default: "/", description: "Absolute path in the snapshot" } },
+          additionalProperties: false,
+        },
+        response: responses(200, "The directory", ref("SnapshotDir"), ...browseErrors),
+      },
+    },
+    async (request, reply) => {
+      const { name, id: snapshot } = request.params;
+      return browse(request, reply, name, (ctx) => listDir(ctx, name, snapshot, request.query.path));
+    },
   );
 
   app.get<{ Querystring: { run?: number; cascade?: string } }>(
