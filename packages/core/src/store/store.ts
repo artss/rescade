@@ -1,4 +1,4 @@
-import type { DatabaseSync, SQLInputValue, SQLOutputValue, StatementSync } from "node:sqlite";
+import { DatabaseSync, type SQLInputValue, type SQLOutputValue, type StatementSync } from "node:sqlite";
 import type { Step } from "../config/types.js";
 import type { LogStream, RunStatus, StepStatus } from "../run/cascade.js";
 
@@ -141,12 +141,8 @@ export class Store {
     };
   }
 
-  /**
-   * Opens (and creates if needed) the database file; ":memory:" for tests.
-   * node:sqlite is loaded here, not at import time: on Node 22 loading it prints an ExperimentalWarning.
-   */
+  /** Opens (and creates if needed) the database file; ":memory:" for tests. */
   static async open(file: string): Promise<Store> {
-    const { DatabaseSync } = await import("node:sqlite");
     const db = new DatabaseSync(file);
     try {
       db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;");

@@ -20,7 +20,7 @@
 - `cli`: бинарник `rescade` (подкоманды), клиент API; `validate` работает локально через core
 - `web`: веб-интерфейс (React, TanStack Query, Tailwind 4, Vite), статика, которую отдаёт демон
 
-Библиотеки: `yaml` (позиции узлов), `zod` (схема), `croner` (cron), встроенный `node:sqlite` (Node >= 22.13),
+Библиотеки: `yaml` (позиции узлов), `zod` (схема), `croner` (cron), встроенный `node:sqlite` (Node >= 26),
 Fastify (+ `@fastify/swagger`: OpenAPI по схемам маршрутов, `@fastify/swagger-ui`, `@fastify/static` для веб-интерфейса),
 `pino`. Логи демона в JSON (stdout). Экран логов демона в веб-интерфейсе отложен, источник для него ещё не выбран.
 
@@ -189,8 +189,7 @@ Fastify (+ `@fastify/swagger`: OpenAPI по схемам маршрутов, `@f
 ## Docker
 
 - Один образ: `rescaded` (точка входа), `rescade` (для `docker exec`), собранный веб-интерфейс и restic.
-  Многоступенчатая сборка: pnpm-сборка, затем только prod-зависимости (`pnpm deploy --prod`) на `node:22-alpine`
-  (на новую LTS переедем отдельно).
+  Многоступенчатая сборка: pnpm-сборка, затем только prod-зависимости (`pnpm deploy --prod`) на `node:26-alpine`.
 - restic берётся бинарником с GitHub-релиза фиксированной версии со сверкой SHA-256 (в пакетах дистрибутивов
   бывает старше 0.17). В образе также `openssh-client` (sftp, с `StrictHostKeyChecking accept-new` и
   `known_hosts` в `/var/lib/rescade`), `ca-certificates`, `tzdata`; `rclone` не входит.

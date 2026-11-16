@@ -60,7 +60,7 @@ SIGHUP, `interrupted` после `docker stop` и после `kill -9`).
 
 - TypeScript строгий (`strict`, `noUncheckedIndexedAccess`), ESM, `module: NodeNext`: импорты с расширением `.js`.
 - В `tsconfig.base.json` явно `"types": ["node"]` (в TypeScript 7 типы Node по умолчанию не подключаются).
-- Node >= 22.13 (проверялось на 22.23): нужен `node:sqlite` без флага. `.nvmrc` = `22`, `engineStrict` в
+- Node >= 26 (текущая LTS, проверялось на 26.13): `node:sqlite` без флага и без ExperimentalWarning. `.nvmrc` = `26`, `engineStrict` в
   `pnpm-workspace.yaml` (проверяет только `pnpm install`, не `pnpm test`). Зависимости: `yaml`, `zod` (v4), `croner`; тесты `vitest`.
 - Ядро (`core`) без сетевого кода и без обращений к `process` вне CLI/демона. Внешние процессы запускать
   через `spawn` без shell, секреты передавать через окружение процесса, а не через аргументы.
@@ -92,10 +92,6 @@ SIGHUP, `interrupted` после `docker stop` и после `kill -9`).
 - На macOS дочерний процесс всегда получает `__CF_USER_TEXT_ENCODING`, даже с пустым `env`; тесты на окружение его отфильтровывают.
 - `runProcess` убивает группу процессов (`process.kill(-pid)`, `detached: true`): иначе внуки шелла держат пайпы
   открытыми и `close` не приходит. Это единственное обращение к `process` в ядре, осознанное.
-- `node:sqlite` на Node 22 при загрузке печатает ExperimentalWarning, поэтому `Store.open` грузит его динамически:
-  `validate` и `run --local` его не видят. В тестах предупреждение видно, это нормально.
-- Бинарник демона начинается с `#!/usr/bin/env -S node --disable-warning=ExperimentalWarning`, иначе первая строка
-  каждого лога была бы предупреждением `node:sqlite`. `tsc` не ставит бит исполнения на `dist/*.js`.
 - `fetch` в Node отказывается ходить на «плохие» порты (1, 9 и др.) с `bad port`; в тестах на «нет связи» брать свободный порт.
 - Разрешённые `Host` считаются после `listen`: при `port: 0` настоящий порт известен только тогда.
 - Локи читаются с `--no-lock`, чтобы не оставлять своих; короткий id `restic cat lock` не принимает, нужен полный (64 hex).
@@ -116,7 +112,9 @@ SIGHUP, `interrupted` после `docker stop` и после `kill -9`).
 - Ответ 401 сбрасывает токен, только если он тот же, с которым ушёл запрос: иначе поздние 401 от неверного токена
   стирали только что введённый верный.
 - happy-dom в тестах печатает `socket hang up` при отмене fetch (SSE при уходе со страницы), это не ошибка.
-- В alpine `env` из BusyBox без `-S`, шебанг демона там не работает: в образе `rescaded`/`rescade` — обёртки на `sh`.
+- `tsc` не ставит бит исполнения на `dist/*.js`: в образе `rescaded`/`rescade` — обёртки на `sh`.
+- В Node 26 нет встроенного corepack: в `Dockerfile` он ставится через `npm install -g corepack@<версия>`
+  (pnpm потом берётся из `packageManager`); в CI pnpm ставит `pnpm/action-setup`.
 - `pnpm deploy` копирует пакет целиком, если нет `files`; у всех пакетов `"files": ["dist"]`. Зависимости `web`
   (React и т. п.) в `devDependencies`: в рантайме нужен только собранный `dist`.
 - Стадии сборки в `Dockerfile` идут на `$BUILDPLATFORM`: результат — JS без нативных модулей, restic качается под
