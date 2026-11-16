@@ -38,8 +38,23 @@ JSON сервисного аккаунта, сертификаты) указыв
   `Host i1.backups.lan` + `IdentityFile /etc/rescade/ssh/id_ed25519`, `User`, `Port`, `ServerAliveInterval`;
 - либо опцией репо: `options: { sftp.args: "-i /etc/rescade/ssh/id_ed25519 -o BatchMode=yes" }`.
 
-Хост должен быть заранее в `known_hosts`: иначе ssh спросит подтверждение и шаг упадёт. Переменных окружения
-у бэкенда нет. Опции: `sftp.command` (своя команда целиком), `sftp.args`.
+restic запускает ssh без терминала, и подтвердить неизвестный ключ хоста некому: ssh отказывает
+(`Host key verification failed.`), а restic сообщает только `unexpected EOF`. rescade добавляет строку ssh к причине
+отказа с подсказкой.
+
+- В образе Docker это настроено (`/etc/ssh/ssh_config.d/rescade.conf`): `StrictHostKeyChecking accept-new`, ключ
+  хоста принимается при первом подключении и пишется в `/var/lib/rescade/known_hosts` (том с данными, переживает
+  пересоздание контейнера). Если ключ потом сменится, ssh откажет; ключ из `~/.ssh/known_hosts` тоже учитывается.
+  Готовить `known_hosts` не нужно, в `/root/.ssh` достаточно ключа (и `config`, если нужен), можно только для чтения.
+  Смонтированные файлы сохраняют хозяина и права с хоста, а ssh в контейнере работает от root: `config` чужого
+  хозяина он отвергает (`Bad owner or permissions on /root/.ssh/config`), ключ root с доступом для других
+  игнорирует (`UNPROTECTED PRIVATE KEY FILE`). Поэтому `sudo chown root:root ssh/* && sudo chmod 600 ssh/*`.
+  Свой `~/.ssh/config` с `StrictHostKeyChecking` или `UserKnownHostsFile` перекрывает эти значения.
+- Без Docker хост должен быть заранее в `known_hosts` пользователя демона:
+  `ssh-keyscan -H i1.backups.lan >> ~/.ssh/known_hosts` (сверив отпечаток) или один раз подключиться руками.
+  Либо то же `StrictHostKeyChecking accept-new` в его `~/.ssh/config`.
+
+Переменных окружения у бэкенда нет. Опции: `sftp.command` (своя команда целиком), `sftp.args`.
 
 ### rest (rest-server)
 

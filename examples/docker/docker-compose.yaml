@@ -26,9 +26,14 @@ services:
       - rescade_token
     volumes:
       - ./config:/etc/rescade/config:ro
-      # history, logs and restic's cache
+      # history, logs, restic's cache and known_hosts of sftp hosts
       - rescade-data:/var/lib/rescade
-      # the key and known_hosts for sftp repos
+      # the key (and ~/.ssh/config, if needed) for sftp repos; known_hosts is not needed here:
+      # the image accepts a host key on the first connection, keeps it in rescade-data
+      # and refuses the host if its key changes later.
+      # The files keep their host owner and mode, and ssh in the container runs as root: it rejects a config
+      # not owned by root ("Bad owner or permissions") and a root-owned key readable by others, so
+      #   sudo chown root:root ssh/* && sudo chmod 600 ssh/*
       - ./ssh:/root/.ssh:ro
       # a local repo
       - /mnt/backups:/backups

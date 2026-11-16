@@ -131,6 +131,14 @@ describe("running a cascade", () => {
     expect(fake.trace()).toEqual(["cat config /r/a", "cat config sftp:host:/r/b"]);
   });
 
+  it("adds what ssh said to the reason, with a hint for an unknown host key", async () => {
+    fake.writeRepo("/r/a", "pw-a");
+    const { result } = await run([copyAB], { FAKE_RESTIC_HOSTKEY: "sftp:host:/r/b" });
+    expect(result.steps[0]?.reason).toMatch(
+      /^cannot open repo "b" \(exit code 1\): Fatal: unable to open .*unexpected EOF \(ssh: Host key verification failed\.; .*known_hosts.*\)$/,
+    );
+  });
+
   it("fails the step when init fails", async () => {
     const { result } = await run([backup], { FAKE_RESTIC_EXIT_INIT: "1" });
     expect(result.steps[0]).toMatchObject({

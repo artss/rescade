@@ -1,4 +1,4 @@
-import { catLockArgs, DEFAULT_REPO_CHECK_TIMEOUT_MS, execRestic, EXIT, listLocksArgs, type ResticContext } from "./restic.js";
+import { catLockArgs, DEFAULT_REPO_CHECK_TIMEOUT_MS, execRestic, EXIT, failureReason, listLocksArgs, type ResticContext } from "./restic.js";
 
 /** A restic lock file as `restic cat lock` shows it. */
 export interface ResticLock {
@@ -39,7 +39,7 @@ export async function readLocks(ctx: ResticContext, name: string): Promise<RepoL
         if (stream === "stdout") stdout.push(line);
       },
     });
-    const last = r.spawnError ?? r.stderrBeforeStop ?? r.stderrTail.filter((l) => l.trim() !== "").at(-1) ?? "no output";
+    const last = r.spawnError ?? r.stderrBeforeStop ?? failureReason(r.stderrTail) ?? "no output";
     return { r, stdout, failure: r.timedOut ? "no answer" : r.code === EXIT.ok ? undefined : last };
   };
 

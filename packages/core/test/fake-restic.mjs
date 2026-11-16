@@ -14,6 +14,7 @@
 //                                with exit code n;
 //                                backup still prints its summary, as real restic does for code 3
 //   FAKE_RESTIC_UNREACHABLE=a,b  repository paths that fail like an unreachable host (exit 1)
+//   FAKE_RESTIC_HOSTKEY=a,b      repository paths that fail like sftp to a host missing from known_hosts (exit 1)
 //   FAKE_RESTIC_HANG=<cmd>       hang in <cmd> until signalled; SIGTERM exits with 130
 //   FAKE_RESTIC_IGNORE_TERM=1    ignore SIGTERM while hanging (only SIGKILL helps)
 //   FAKE_RESTIC_VERSION=x.y.z    version `restic version` reports (default 0.18.0)
@@ -66,9 +67,14 @@ const fatal = (code, message) => {
 };
 const file = (p) => path.join(state, "repos", encodeURIComponent(p) + ".json");
 const unreachable = (env.FAKE_RESTIC_UNREACHABLE ?? "").split(",").filter(Boolean);
+const unknownHostKey = (env.FAKE_RESTIC_HOSTKEY ?? "").split(",").filter(Boolean);
 
 function open(p, password) {
   if (unreachable.includes(p)) fatal(1, `unable to open repository at ${p}: dial tcp: connect: no route to host`);
+  if (unknownHostKey.includes(p)) {
+    process.stderr.write("subprocess ssh: Host key verification failed.\n");
+    fatal(1, `unable to open repository at ${p}: unable to start the sftp session, error: error receiving version packet from server: server unexpectedly closed connection: unexpected EOF`);
+  }
   if (!fs.existsSync(file(p))) {
     fatal(10, `repository does not exist: unable to open config file: stat ${p}/config: no such file or directory`);
   }
