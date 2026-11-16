@@ -265,6 +265,39 @@ const Status = {
   required: ["version", "startedAt", "config"],
 } as const;
 
+const count = (description: string) => ({ type: "integer", description }) as const;
+const nullableMs = (description: string) => ({ type: ["integer", "null"], description: `Epoch milliseconds; ${description}` }) as const;
+
+const Summary = {
+  $id: "Summary",
+  type: "object",
+  description: "Flat counts for dashboards such as the homepage `customapi` widget",
+  properties: {
+    cascades: count("Cascades in the config"),
+    running: count("Runs in progress"),
+    queued: count("Runs waiting for busy repos"),
+    success: count("Cascades whose latest finished run succeeded"),
+    warning: count("Cascades whose latest finished run ended with a warning"),
+    failed: count("Cascades whose latest finished run failed or was interrupted"),
+    lastRunAt: nullableMs("when the latest finished run ended, null before any"),
+    nextRunAt: nullableMs("the nearest scheduled run, null when nothing is scheduled"),
+    repos: count("Repos in the config"),
+    repoProblems: count("Repos whose last check failed (unreachable, wrong password and the like)"),
+  },
+  required: [
+    "cascades",
+    "running",
+    "queued",
+    "success",
+    "warning",
+    "failed",
+    "lastRunAt",
+    "nextRunAt",
+    "repos",
+    "repoProblems",
+  ],
+} as const;
+
 const Snapshot = {
   $id: "Snapshot",
   type: "object",
@@ -363,6 +396,7 @@ export const schemas = [
   Repo,
   RepoCheck,
   Status,
+  Summary,
   Snapshot,
   SnapshotEntry,
   SnapshotDir,

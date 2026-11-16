@@ -172,6 +172,7 @@ describe("response schemas", () => {
     ["GET", "/api/runs/7/log", 200],
     ["POST", "/api/runs/7/cancel", 202],
     ["GET", "/api/repos", 200],
+    ["GET", "/api/summary", 200],
     ["GET", "/api/repos/a/snapshots", 200],
     ["GET", `/api/repos/a/snapshots/${SNAP}/ls?path=/home`, 200],
   ] as const)("%s %s keeps every field", async (method, url, status) => {
@@ -232,6 +233,52 @@ describe("response schemas", () => {
       { type: "copy", label: "copy a -> b", name: null, from: "a", to: "b" },
     ]);
     expect(JSON.stringify(full)).not.toContain("hunter2");
+  });
+});
+
+describe("summary", () => {
+  it("counts cascades by their latest finished run and finds the nearest runs", async () => {
+    const r = (id: number, status: RunRecord["status"], finishedAt?: number): RunRecord => {
+      const { finishedAt: _, ...rest } = run;
+      return { ...rest, id, status, startedAt: id * 100, ...(finishedAt !== undefined && { finishedAt }) };
+    };
+    const history: Record<string, RunRecord[]> = {
+      // newest first: in progress and skipped runs have no outcome
+      daily: [r(9, "running"), r(8, "skipped", 800), r(5, "success", 3000), r(4, "failed", 2500)],
+      // a cancelled run leaves the outcome before it; an interrupted one counts as failed
+      full: [r(7, "cancelled", 700), r(6, "interrupted")],
+    };
+    const summaryApp = await buildServer({
+      ...deps,
+      runner: { ...deps.runner, running: () => [r(9, "running"), r(10, "queued")] },
+      scheduler: { nextRun: (name: string) => (name === "daily" ? new Date(9000) : undefined) },
+      store: { ...deps.store, runs: ({ cascade }: { cascade: string }) => history[cascade] ?? [] },
+    } as unknown as ServerDeps);
+    const res = await summaryApp.inject({ url: "/api/summary", headers: { host: HOST, authorization: `Bearer ${TOKEN}` } });
+    await summaryApp.close();
+    expect(res.json()).toEqual({
+      cascades: 2,
+      running: 1,
+      queued: 1,
+      success: 1,
+      warning: 0,
+      failed: 1,
+      lastRunAt: 3000,
+      nextRunAt: 9000,
+      repos: 2,
+      repoProblems: 1,
+    });
+  });
+
+  it("has no times before the first run and without schedules", async () => {
+    const summaryApp = await buildServer({
+      ...deps,
+      scheduler: { nextRun: () => undefined },
+      store: { ...deps.store, runs: () => [] },
+    } as unknown as ServerDeps);
+    const res = await summaryApp.inject({ url: "/api/summary", headers: { host: HOST, authorization: `Bearer ${TOKEN}` } });
+    await summaryApp.close();
+    expect(res.json()).toMatchObject({ success: 0, failed: 0, lastRunAt: null, nextRunAt: null });
   });
 });
 
@@ -368,6 +415,7 @@ describe("OpenAPI document", () => {
       "GET /api/runs/{id}",
       "GET /api/runs/{id}/log",
       "GET /api/status",
+      "GET /api/summary",
       "POST /api/cascades/{name}/run",
       "POST /api/runs/{id}/cancel",
     ]);

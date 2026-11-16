@@ -29,11 +29,12 @@ API под `/api`, остальные пути отдают собранный �
 Просмотр снапшотов (`src/restic/snapshots.ts`: `restic snapshots`/`ls` без мьютекса, `--retry-lock 10s`; маршруты
 `/api/repos/:name/snapshots[/:id/ls]`, CLI `snapshots` и `ls`, страница репо `pages/Repo.tsx` (состояние и снапшоты, ссылка с имени на `/repos`); у шага backup поле
 `repo`, схема базы v2 с миграцией в `Store.open`). Бэкенды restic (`src/config/backends.ts`: префикс `path`, опции по бэкенду, конфликты `env`/`options` в парах
-`copy`/`from`; описание в `docs/backends.md`). 234 теста vitest (проекты `node` и `web`), фейковый restic в `packages/core/test/fake-restic.mjs`, 8 интеграционных с настоящим restic
+`copy`/`from`; описание в `docs/backends.md`). 237 тестов vitest (проекты `node` и `web`), фейковый restic в `packages/core/test/fake-restic.mjs`, 8 интеграционных с настоящим restic
 (проверено на 0.19.1), пример в `examples/config`.
 
 Шаги 1–7 из DESIGN.md сделаны. Шаг 8: `Dockerfile`, `.github/workflows/ci.yaml` (тесты, затем образ
-в `ghcr.io/artss/rescade` для amd64/arm64), пример `examples/docker`. Отложено: экран логов демона, уведомления, веб-редактор конфига.
+в `ghcr.io/artss/rescade` для amd64/arm64), пример `examples/docker`. Виджет для homepage: `GET /api/summary` (плоские счётчики для `customapi`), конфиг в README.
+Отложено: экран логов демона, уведомления, веб-редактор конфига.
 
 Шаг 9 (восстановление): просмотр снапшотов сделан, сам restore ещё не обсуждался.
 

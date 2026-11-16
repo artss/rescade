@@ -37,8 +37,61 @@ values to accept: `host:port` on that port, `host` on any; unset = any host), `R
 The API lives under `/api` and needs `Authorization: Bearer <token>` on every request:
 `GET /api/status`, `GET /api/cascades`, `GET /api/runs?cascade=&limit=&before=`, `GET /api/runs/:id`,
 `GET /api/runs/:id/log?step=&after=`, `POST /api/cascades/:name/run`, `POST /api/runs/:id/cancel`,
-`GET /api/repos`, `GET /api/events?run=|cascade=` (server-sent events). The OpenAPI document is at
+`GET /api/repos`, `GET /api/summary` (flat counts for dashboards), `GET /api/events?run=|cascade=` (server-sent events). The OpenAPI document is at
 `/api/openapi.json`, Swagger UI at `/api/docs` and the health check at `/api/health`, all without the token.
+
+## Homepage widget
+
+[homepage](https://gethomepage.dev) shows rescade through its `customapi` widget. `GET /api/summary` gives flat
+fields made for it: `cascades`, `running`, `queued`, `success`, `warning`, `failed` (cascades by their latest
+finished run; `failed` includes `interrupted`), `lastRunAt`, `nextRunAt` (epoch ms, `null` when there is none),
+`repos` and `repoProblems` (repos whose last check failed). A block shows up to four of them:
+
+```yaml
+# services.yaml
+- Backups:
+    - rescade:
+        href: http://backup.lan:8765/
+        description: restic cascades
+        widget:
+          type: customapi
+          url: http://rescade:8765/api/summary
+          refreshInterval: 60000
+          headers:
+            Authorization: Bearer {{HOMEPAGE_VAR_RESCADE_TOKEN}}
+          mappings:
+            - field: running
+              label: Running
+            - field: failed
+              label: Failed
+            - field: repoProblems
+              label: Repo problems
+            - field: nextRunAt
+              label: Next
+              format: relativeDate
+              style: short
+              numeric: auto
+```
+
+The latest outcome of each cascade fits a `dynamic-list` over `GET /api/cascades`:
+
+```yaml
+        widget:
+          type: customapi
+          url: http://rescade:8765/api/cascades
+          headers:
+            Authorization: Bearer {{HOMEPAGE_VAR_RESCADE_TOKEN}}
+          display: dynamic-list
+          mappings:
+            name: name
+            label: lastRun.status
+            target: http://backup.lan:8765/runs?cascade={name}
+```
+
+Give homepage the token as `HOMEPAGE_VAR_RESCADE_TOKEN`, or as a file through `HOMEPAGE_FILE_RESCADE_TOKEN` (then
+`{{HOMEPAGE_FILE_RESCADE_TOKEN}}` in the YAML) to reuse the Docker secret. homepage queries the daemon from its own
+server, so the daemon must be reachable from there (a shared Docker network, not just the port on `127.0.0.1`), and
+with `RESCADE_ALLOWED_HOSTS` set, the name in `url` (`rescade` above) must be in it.
 
 ## The web interface
 
