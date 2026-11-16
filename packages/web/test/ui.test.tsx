@@ -98,14 +98,16 @@ describe("snapshots", () => {
     );
 
     renderApp("/repos");
-    const card = (await screen.findByRole("heading", { name: "b" }, wait)).parentElement!;
-    fireEvent.click(within(card).getByRole("link", { name: "Snapshots" }));
+    fireEvent.click(await screen.findByRole("link", { name: "b" }, wait));
+    expect(location.pathname).toBe("/repos/b");
     expect(await screen.findByText("weekly", {}, wait)).toBeDefined();
+    expect(screen.getByText("Chunker polynomial")).toBeDefined();
     fireEvent.click(screen.getByRole("link", { name: "dddddddd" }));
 
     fireEvent.click(await screen.findByRole("link", { name: "home/" }, wait));
     fireEvent.click(await screen.findByRole("link", { name: "u/" }, wait));
     expect(await screen.findByText("notes.txt", {}, wait)).toBeDefined();
+    expect(screen.getByRole("link", { name: "b" }).getAttribute("href")).toBe("/repos/b");
     expect(screen.getByText("2.0 KiB")).toBeDefined();
     expect(location.search).toBe("?path=%2Fhome%2Fu");
 
@@ -121,6 +123,11 @@ describe("snapshots", () => {
     fireEvent.click(link);
     await waitFor(() => expect(location.pathname).toMatch(/^\/repos\/a\/snapshots\/[0-9a-f]{64}$/), wait);
     expect(await screen.findByText("Empty directory.", {}, wait)).toBeDefined();
+  });
+
+  it("says when there is no such repo", async () => {
+    renderApp("/repos/nope");
+    expect(await screen.findByText("No such repo.", {}, wait)).toBeDefined();
   });
 
   it("shows what restic said when a snapshot cannot be read", async () => {

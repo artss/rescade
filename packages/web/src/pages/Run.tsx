@@ -9,7 +9,7 @@ import { Card } from "../components/Card.js";
 import { ErrorBox } from "../components/ErrorBox.js";
 import { Loading } from "../components/Loading.js";
 import { Time } from "../components/Time.js";
-import { snapshotHref } from "./Snapshots.js";
+import { snapshotHref } from "./Repo.js";
 
 export function RunPage({ id }: { id: number }) {
   const { data: run, error } = useRun(id);
