@@ -43,6 +43,9 @@ describe("cascades and runs", () => {
     renderApp("/");
     expect(await screen.findByText("Forget old snapshots", {}, wait)).toBeDefined();
     expect(await screen.findByText("live", {}, wait)).toBeDefined();
+    const home = screen.getByRole("list", { name: "Steps of home" });
+    expect(within(home).getByText("Paths").nextElementSibling?.textContent).toBe("/home");
+    expect(within(screen.getByRole("list", { name: "Steps of daily" })).getByText("7 daily")).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Run daily" }));
 
     await waitFor(() => expect(location.pathname).toMatch(/^\/runs\/\d+$/), wait);

@@ -5,7 +5,6 @@ import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import Fastify, { LogController, type FastifyBaseLogger, type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import {
-  describeStep,
   listDir,
   listSnapshots,
   MAX_DIR_ENTRIES,
@@ -19,6 +18,7 @@ import {
   type Scheduler,
   type Store,
 } from "@rescade/core";
+import { stepView } from "./cascades.js";
 import type { RepoStates } from "./repos.js";
 import { arrayOf, ref, schemas } from "./schemas.js";
 
@@ -253,7 +253,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
         timezone: c.timezone ?? null,
         onBusy: c.onBusy,
         waitTimeoutMs: c.waitTimeoutMs ?? null,
-        steps: c.steps.map((s) => ({ type: s.type, label: describeStep(s) })),
+        steps: c.steps.map((s) => stepView(s, config)),
         nextRun: deps.scheduler.nextRun(name)?.getTime() ?? null,
         active: active.get(name) ?? null,
         lastRun: deps.store.runs({ cascade: name, limit: 1 })[0] ?? null,
