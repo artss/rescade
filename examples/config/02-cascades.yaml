@@ -1,5 +1,6 @@
 cascades:
   system:
+    group: backups
     description: System files, copied to both remotes
     schedule: "0 */4 * * *"
     on-busy: skip
@@ -16,6 +17,7 @@ cascades:
       - retain: { repo: system-i2 }
 
   home:
+    group: backups
     schedule: "0 */6 * * *"
     steps:
       - backup: { set: home, repo: home-local }

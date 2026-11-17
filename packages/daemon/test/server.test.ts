@@ -70,7 +70,7 @@ beforeAll(async () => {
     `
 repos:
   a: { path: "rest:https://user:secret@host/a", password: pw, retention: { daily: 7, within: 1m } }
-  b: { path: /r/b, password: pw, from: a }
+  b: { path: /r/b, password: pw, from: a, group: offsite }
 sets:
   home: { include: [/home] }
   docs:
@@ -81,6 +81,7 @@ sets:
     exclude-caches: true
 cascades:
   daily:
+    group: nightly
     description: Home to a
     schedule: "0 3 * * *"
     timezone: Europe/Berlin
@@ -186,8 +187,11 @@ describe("response schemas", () => {
     expect((await call("GET", "/api/runs/7")).body.steps[0].summary).toEqual(step.summary);
     expect((await call("GET", "/api/repos")).body).toMatchObject([
       { location: "rest:https://user:***@host/a", locks: { count: 11, error: "partly read" } },
-      { state: "unreachable", lockedBy: { runId: 7 } },
+      { state: "unreachable", lockedBy: { runId: 7 }, group: "offsite" },
     ]);
+    expect((await call("GET", "/api/repos")).body[0].group).toBeUndefined();
+    const groups = (await call("GET", "/api/cascades")).body.map((c: { group: string | null }) => c.group);
+    expect(groups).toEqual(["nightly", null]);
   });
 
   it("shows the settings of every step, env without values", async () => {

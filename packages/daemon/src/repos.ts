@@ -4,6 +4,8 @@ export interface RepoView {
   name: string;
   /** Repo location with any password in a URL removed. */
   location: string;
+  /** Display group from the config. */
+  group?: string;
   from?: string;
   /** "unknown" until the repo has been checked. */
   state: "unknown" | "ok" | RepoProblem;
@@ -33,6 +35,7 @@ export class RepoStates {
   list(config: Config, locks: RepoLocks): RepoView[] {
     return Object.entries(config.repos).map(([name, repo]) => {
       const view: RepoView = { name, location: redact(repo.path), state: "unknown" };
+      if (repo.group !== undefined) view.group = repo.group;
       if (repo.from !== undefined) view.from = repo.from;
       const c = this.checked.get(name);
       if (c) {

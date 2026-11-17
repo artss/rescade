@@ -60,7 +60,11 @@ export const RetentionSchema = z
     error: "retention must set at least one of: last, hourly, daily, weekly, monthly, yearly, within",
   });
 
+/** Display group in the web interface. */
+const group = z.string().min(1).optional();
+
 export const RepoSchema = z.strictObject({
+  group,
   path: z.string().min(1),
   password: z.string().min(1),
   from: ref.optional(),
@@ -71,6 +75,7 @@ export const RepoSchema = z.strictObject({
 
 export function normalizeRepo(v: z.output<typeof RepoSchema>): Repo {
   return {
+    group: v.group,
     path: v.path,
     password: v.password,
     from: v.from,
@@ -103,6 +108,7 @@ export function normalizeSet(v: z.output<typeof SetSchema>): BackupSet {
 /* ---------- cascades (steps are validated separately, see steps.ts) ---------- */
 
 export const CascadeSchema = z.strictObject({
+  group,
   description: z.string().optional(),
   schedule: z
     .union([z.string().min(1), stringList.min(1)], {
@@ -120,6 +126,7 @@ export type CascadeHeader = Omit<Cascade, "steps">;
 export function normalizeCascadeHeader(v: z.output<typeof CascadeSchema>): CascadeHeader {
   const schedule = v.schedule === undefined ? [] : Array.isArray(v.schedule) ? v.schedule : [v.schedule];
   return {
+    group: v.group,
     description: v.description,
     schedule,
     timezone: v.timezone,

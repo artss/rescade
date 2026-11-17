@@ -31,11 +31,12 @@ export default async function setup(project: TestProject) {
     `
 repos:
   a: { path: /r/a, password: pw-a, retention: { daily: 7 } }
-  b: { path: /r/b, password: pw-b, from: a }
+  b: { path: /r/b, password: pw-b, from: a, group: offsite }
 sets:
   home: { include: [/home] }
 cascades:
   daily:
+    group: regular
     description: Forget old snapshots
     schedule: "0 3 * * *"
     steps:
@@ -44,6 +45,7 @@ cascades:
     steps:
       - run: { command: ${hold}, lock: [b] }
   home:
+    group: regular
     steps:
       - backup: { set: home, repo: a }
 `,

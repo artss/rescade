@@ -12,6 +12,8 @@ export interface Retention {
 }
 
 export interface Repo {
+  /** Display group in the web interface. */
+  group?: string;
   path: string;
   password: string;
   /** Repo whose chunker parameters this one is created from (`restic init --from-repo`). */
@@ -90,6 +92,8 @@ export type Step = BackupStep | RetainStep | PruneStep | CheckStep | CopyStep | 
 export type OnBusy = "wait" | "skip";
 
 export interface Cascade {
+  /** Display group in the web interface. */
+  group?: string;
   description?: string;
   /** Cron expressions; empty means the cascade only runs on demand. */
   schedule: string[];

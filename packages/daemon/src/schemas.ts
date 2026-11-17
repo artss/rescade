@@ -134,6 +134,7 @@ const Cascade = {
   type: "object",
   properties: {
     name: { type: "string" },
+    group: { type: ["string", "null"], description: "Display group; null: no group" },
     description: { type: ["string", "null"] },
     schedule: { type: "array", items: { type: "string" }, description: "Cron expressions; empty: manual runs only" },
     timezone: { type: ["string", "null"] },
@@ -146,6 +147,7 @@ const Cascade = {
   },
   required: [
     "name",
+    "group",
     "description",
     "schedule",
     "timezone",
@@ -199,6 +201,7 @@ const Repo = {
   properties: {
     name: { type: "string" },
     location: { type: "string", description: "Repo location with any password in a URL hidden" },
+    group: { type: "string", description: "Display group" },
     from: { type: "string" },
     state: { type: "string", enum: ["unknown", "ok", ...repoProblem], description: "`unknown` until checked" },
     reason: { type: "string" },

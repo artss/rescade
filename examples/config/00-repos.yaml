@@ -1,27 +1,33 @@
+# `group` only groups the repos in the web interface.
 repos:
   system-local:
+    group: system
     path: /mnt/backups/system
     password: ${SYSTEM_LOCAL_PASSWORD}
     retention: { hourly: 24, daily: 7, weekly: 4, monthly: 12, yearly: 2 }
 
   system-i1:
+    group: system
     path: sftp:i1.backups.lan:backups/system
     password: ${SYSTEM_I1_PASSWORD}
     from: system-local
     retention: { daily: 30, weekly: 12, monthly: 24 }
 
   system-i2:
+    group: system
     path: sftp:i2.backups.lan:backups/system
     password: ${SYSTEM_I2_PASSWORD}
     from: system-i1
     retention: { weekly: 12, monthly: 36, yearly: 10 }
 
   home-local:
+    group: home
     path: /mnt/backups/home
     password: ${HOME_LOCAL_PASSWORD}
     retention: { daily: 14, weekly: 8, monthly: 12 }
 
   home-i1:
+    group: home
     path: sftp:i1.backups.lan:backups/home
     password: ${HOME_I1_PASSWORD}
     from: home-local

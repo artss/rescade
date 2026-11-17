@@ -1,5 +1,6 @@
 import { useRepos } from "../queries.js";
 import { ErrorBox } from "../components/ErrorBox.js";
+import { GroupedList } from "../components/Group.js";
 import { Loading } from "../components/Loading.js";
 import { RepoCard, StaleLocksNote } from "../components/RepoCard.js";
 
@@ -9,9 +10,7 @@ export function ReposPage() {
   if (!data) return <Loading />;
   return (
     <div className="space-y-3">
-      {data.map((r) => (
-        <RepoCard key={r.name} repo={r} />
-      ))}
+      <GroupedList items={data} groupOf={(r) => r.group} keyOf={(r) => r.name} render={(r) => <RepoCard repo={r} />} />
       <StaleLocksNote repos={data} />
     </div>
   );

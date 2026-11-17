@@ -4,6 +4,7 @@ import { mergeLog, type LogData } from "../src/log.js";
 import { applyEvent, keys } from "../src/queries.js";
 import { parseEvents } from "../src/sse.js";
 import { formatBytes, formatDuration } from "../src/format.js";
+import { groupItems } from "../src/groups.js";
 import { stepDetails } from "../src/steps.js";
 import type { CascadeStep, LogRecord, RunWithSteps } from "../src/types.js";
 
@@ -151,6 +152,24 @@ describe("stepDetails", () => {
       ["Command", "/bin/dump --all"],
       ["Env", "PGPASSWORD"],
       ["Timeout", "10m 00s"],
+    ]);
+  });
+});
+
+describe("groupItems", () => {
+  it("keeps the config order, a group in the place of its first item", () => {
+    const items = [
+      { n: "a", g: null },
+      { n: "b", g: "x" },
+      { n: "c", g: undefined },
+      { n: "d", g: "y" },
+      { n: "e", g: "x" },
+    ];
+    expect(groupItems(items, (i) => i.g).map((g) => ("item" in g ? g.item.n : `${g.group}:${g.items.map((i) => i.n).join("")}`))).toEqual([
+      "a",
+      "x:be",
+      "c",
+      "y:d",
     ]);
   });
 });

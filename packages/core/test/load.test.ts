@@ -35,6 +35,7 @@ repos:
     password: \${PW}
     retention: { daily: 7 }
   b:
+    group: offsite
     path: sftp:host:b
     password: \${PW}
     from: a
@@ -48,6 +49,7 @@ sets:
 const CASCADE = `
 cascades:
   c:
+    group: nightly
     schedule: "0 */4 * * *"
     steps:
       - backup: { set: s, repo: a }
@@ -65,8 +67,10 @@ describe("loading", () => {
     const c = r.config!;
     expect(c.repos.a!.password).toBe("secret");
     expect(c.repos.b!.from).toBe("a");
+    expect(c.repos.b!.group).toBe("offsite");
+    expect(c.repos.a!.group).toBeUndefined();
     expect(c.sets.s).toMatchObject({ include: ["/etc"], exclude: [], oneFileSystem: false });
-    expect(c.cascades.c).toMatchObject({ schedule: ["0 */4 * * *"], onBusy: "skip" });
+    expect(c.cascades.c).toMatchObject({ group: "nightly", schedule: ["0 */4 * * *"], onBusy: "skip" });
     expect(c.cascades.c!.steps.map((s) => s.type)).toEqual(["backup", "retain", "copy"]);
     expect(r.referencedEnv).toEqual(["PW"]);
     expect(r.origins["repos/a"]).toMatchObject({ line: 3, col: 3 });

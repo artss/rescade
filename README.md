@@ -155,6 +155,8 @@ are merged by name. The same name in two files is an error, and so is an unknown
   (`-o key=value`). Details and caveats, in Russian: `docs/backends.md`.
 - `run` takes `command` as a list of arguments; `shell: true` takes a string. Default timeout 1h.
   The command gets only the step's `env`, not the daemon's environment.
+- `group` on a repo or a cascade puts it under a collapsible heading in the web interface; entries
+  without it are listed on their own.
 - `schedule` is a cron expression or a list of them (optionally with `timezone`); without it the cascade
   only runs on demand. Missed times are not caught up.
 

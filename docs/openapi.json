@@ -418,6 +418,13 @@
           "name": {
             "type": "string"
           },
+          "group": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Display group; null: no group"
+          },
           "description": {
             "type": [
               "string",
@@ -486,6 +493,7 @@
         },
         "required": [
           "name",
+          "group",
           "description",
           "schedule",
           "timezone",
@@ -583,6 +591,10 @@
           "location": {
             "type": "string",
             "description": "Repo location with any password in a URL hidden"
+          },
+          "group": {
+            "type": "string",
+            "description": "Display group"
           },
           "from": {
             "type": "string"

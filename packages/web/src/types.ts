@@ -37,6 +37,7 @@ export type CascadeStep = { label: string; name: string | null } & (
 /** `GET /api/cascades`. */
 export interface CascadeView {
   name: string;
+  group: string | null;
   description: string | null;
   schedule: string[];
   timezone: string | null;
@@ -52,6 +53,7 @@ export interface CascadeView {
 export interface RepoView {
   name: string;
   location: string;
+  group?: string;
   from?: string;
   state: "unknown" | "ok" | "unreachable" | "wrong-password" | "init-failed" | "error" | "cancelled";
   reason?: string;
