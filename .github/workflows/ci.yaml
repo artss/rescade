@@ -36,9 +36,11 @@ jobs:
         with:
           # the tags and the commits since the latest one
           fetch-depth: 0
+      # only for scripts/version.mjs; without this setup-node v5 sees packageManager and looks for pnpm to cache
       - uses: actions/setup-node@v5
         with:
           node-version: 26
+          package-manager-cache: false
       - id: version
         run: echo "version=$(node scripts/version.mjs next)" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-qemu-action@v3

@@ -119,6 +119,8 @@ SIGHUP, `interrupted` после `docker stop` и после `kill -9`).
 - Версию в `package.json` не править: там всегда `0.0.0-dev`, настоящая — из git-тега, её вписывает
   `scripts/version.mjs set` в `Dockerfile`. Тег, запушенный с `GITHUB_TOKEN`, других workflow не запускает,
   поэтому образ собирается до тега в том же job, а не по тегу. `docs/openapi.json` поэтому тоже с `0.0.0-dev`.
+- `actions/setup-node@v5` сам включает кэш по `packageManager` из `package.json` и ищет pnpm; в джобе без
+  `pnpm/action-setup` нужен `package-manager-cache: false`.
 - `pnpm deploy` копирует пакет целиком, если нет `files`; у всех пакетов `"files": ["dist"]`. Зависимости `web`
   (React и т. п.) в `devDependencies`: в рантайме нужен только собранный `dist`.
 - Стадии сборки в `Dockerfile` идут на `$BUILDPLATFORM`: результат — JS без нативных модулей, restic качается под
