@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import { Link } from "wouter";
+import logo from "../assets/rescade-logo.svg";
 import { formatTime } from "../format.js";
 import { useStatus } from "../queries.js";
 import { clearToken } from "../token.js";
@@ -19,7 +21,9 @@ export function Layout({ connection, children }: { connection: Connection; child
     <>
       <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2">
-          <span className="font-semibold">rescade</span>
+          <Link href="/" className="shrink-0">
+            <img src={logo} alt="rescade" className="h-7 w-7" />
+          </Link>
           <nav className="flex gap-1">
             <NavLink href="/">Cascades</NavLink>
             <NavLink href="/runs">Runs</NavLink>

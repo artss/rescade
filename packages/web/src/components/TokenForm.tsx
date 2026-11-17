@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { setToken } from "../token.js";
+import logo from "../assets/rescade-logo.svg";
 
 export function TokenForm({ rejected }: { rejected: boolean }) {
   const [value, setValue] = useState("");
@@ -13,7 +14,9 @@ export function TokenForm({ rejected }: { rejected: boolean }) {
           if (value.trim() !== "") setToken(value.trim(), remember);
         }}
       >
-        <h1 className="text-lg font-semibold">rescade</h1>
+        <h1>
+          <img src={logo} alt="rescade" className="h-10 w-10" />
+        </h1>
         {rejected && (
           <p role="alert" className="text-sm text-red-700 dark:text-red-400">
             The daemon rejected the token.
