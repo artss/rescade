@@ -113,8 +113,9 @@ describe("the CLI through the daemon", () => {
     }
 
     const status = await cli(["status"]);
-    expect(status.stdout).toMatch(/^rescaded \d+\.\d+\.\d+, up since \d{4}-\d\d-\d\d \d\d:\d\d:\d\d\nconfig .+, loaded /);
+    expect(status.stdout).toMatch(/^rescaded \S+, up since \d{4}-\d\d-\d\d \d\d:\d\d:\d\d\nconfig .+, loaded /);
     expect(status.stdout).not.toContain("failed");
+    expect(status.stdout).not.toContain("differs from the daemon");
     expect(status.stdout).toMatch(new RegExp(`^daily +success .* \\(run ${id}\\) +\\d{4}-\\d\\d-\\d\\d 03:00:00 +-$`, "m"));
     expect(status.stdout).toMatch(/^slow +- +manual +-$/m);
 

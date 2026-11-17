@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,6 +18,7 @@ import {
 import { RepoStates } from "./repos.js";
 import { buildServer, type DaemonStatus } from "./server.js";
 import { allowedHosts, type Settings } from "./settings.js";
+import { VERSION } from "./version.js";
 
 export { readSettings, SettingsError, USAGE, type Settings } from "./settings.js";
 
@@ -43,10 +44,6 @@ export interface DaemonOptions {
 export class StartupError extends Error {}
 
 const PRUNE_INTERVAL_MS = 60 * 60 * 1000;
-
-// the same path from src (tests) and dist
-const VERSION = (JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string })
-  .version;
 
 /** The build of @rescade/web, when there is one. */
 function findWebDir(): string | undefined {

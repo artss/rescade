@@ -23,6 +23,7 @@ import { stepView } from "./cascades.js";
 import type { RepoStates } from "./repos.js";
 import { arrayOf, ref, schemas } from "./schemas.js";
 import { hostAllowed } from "./settings.js";
+import { VERSION } from "./version.js";
 
 /** What `GET /status` shows about the daemon itself. */
 export interface DaemonStatus {
@@ -139,7 +140,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
       openapi: "3.1.0",
       info: {
         title: "rescade API",
-        version: "1",
+        version: VERSION,
         description:
           'Runs and history of rescade cascades. Errors are `{ "error": "..." }`; times are epoch milliseconds.',
       },

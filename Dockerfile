@@ -14,7 +14,11 @@ COPY packages/web/package.json packages/web/
 RUN pnpm install --frozen-lockfile
 COPY tsconfig.json tsconfig.base.json ./
 COPY packages packages
-RUN pnpm build \
+COPY scripts scripts
+# the version comes from CI (the next git tag); local builds stay 0.0.0-dev
+ARG VERSION
+RUN if [ -n "$VERSION" ]; then node scripts/version.mjs set "$VERSION"; fi \
+ && pnpm build \
  && pnpm --filter @rescade/daemon deploy --prod /out/daemon \
  && pnpm --filter @rescade/cli deploy --prod /out/cli
 

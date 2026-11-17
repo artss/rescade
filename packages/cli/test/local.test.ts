@@ -1,5 +1,5 @@
-import { spawn } from "node:child_process";
-import { writeFile } from "node:fs/promises";
+import { execFile, spawn } from "node:child_process";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { FAKE_RESTIC, FakeState } from "../../core/test/helpers/fake.js";
@@ -56,5 +56,19 @@ describe("run --local", () => {
     const r = await runLocal({ FAKE_RESTIC_VERSION: "0.16.4" });
     expect(r.stderr).toMatch(/^rescade: warning: restic 0\.16\.4 \(".*fake-restic\.mjs"\) is older than 0\.17\.0: /);
     expect(r.code).toBe(0);
+  });
+});
+
+describe("--version", () => {
+  it("prints the version of the package", async () => {
+    const { version } = JSON.parse(await readFile(path.join(ROOT, "packages", "cli", "package.json"), "utf8")) as { version: string };
+    for (const flag of ["--version", "-V"]) {
+      const stdout = await new Promise<string>((resolve, reject) =>
+        execFile(process.execPath, ["--conditions=source", "--import", "tsx", CLI, flag], { cwd: ROOT }, (err, out) =>
+          err ? reject(err) : resolve(out),
+        ),
+      );
+      expect(stdout).toBe(`rescade ${version}\n`);
+    }
   });
 });

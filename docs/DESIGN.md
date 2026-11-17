@@ -217,7 +217,14 @@ Fastify (+ `@fastify/swagger`: OpenAPI по схемам маршрутов, `@f
   можно, если они ни с чем в образе не пересекаются.
 - Порт публикуется на `127.0.0.1:8765`; `RESCADE_ALLOWED_HOSTS` по желанию ограничивает имена, под которыми он доступен.
 - Публикация: GitHub Actions, `ghcr.io/artss/rescade`, `linux/amd64` и `linux/arm64` через buildx;
-  тег `vX.Y.Z` даёт образы `X.Y.Z`, `X.Y`, `latest`, ветка `main` — `edge`. Перед сборкой образа гоняются тесты.
+  каждый пуш в `main` — релиз: образ `X.Y.Z`, `X.Y`, `latest` и тег `vX.Y.Z`. Перед сборкой образа гоняются тесты.
+- Версия одна на весь монорепо и живёт только в git-тегах: в `package.json` всех пакетов `0.0.0-dev`, в репо CI
+  ничего не коммитит. Следующую версию считает `scripts/version.mjs next` от последнего тега по conventional commits
+  после него: breaking поднимает major (до 1.0 — minor), `feat` — minor, остальное — patch; без тегов `0.1.0`.
+  `Dockerfile` получает её через `ARG VERSION` и вписывает во все `package.json` до сборки. Тег ставится после
+  успешной публикации образа; прогоны релиза идут по одному (`concurrency`). Версию показывают `rescade --version`,
+  `GET /api/status` и `info.version` в OpenAPI (`rescade status` предупреждает, если версии CLI и демона разные)
+  и шапка веб-интерфейса.
 - Пример в `examples/docker-compose.yaml` рядом с `examples/config`.
 
 ## Веб-интерфейс

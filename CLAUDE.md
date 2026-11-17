@@ -29,7 +29,7 @@ API под `/api`, остальные пути отдают собранный �
 Просмотр снапшотов (`src/restic/snapshots.ts`: `restic snapshots`/`ls` без мьютекса, `--retry-lock 10s`; маршруты
 `/api/repos/:name/snapshots[/:id/ls]`, CLI `snapshots` и `ls`, страница репо `pages/Repo.tsx` (состояние и снапшоты, ссылка с имени на `/repos`); у шага backup поле
 `repo`, схема базы v2 с миграцией в `Store.open`). Бэкенды restic (`src/config/backends.ts`: префикс `path`, опции по бэкенду, конфликты `env`/`options` в парах
-`copy`/`from`; описание в `docs/backends.md`). 239 тестов vitest (проекты `node` и `web`), фейковый restic в `packages/core/test/fake-restic.mjs`, 8 интеграционных с настоящим restic
+`copy`/`from`; описание в `docs/backends.md`). 245 тестов vitest (проекты `node` и `web`), фейковый restic в `packages/core/test/fake-restic.mjs`, 8 интеграционных с настоящим restic
 (проверено на 0.19.1), пример в `examples/config`.
 
 Шаги 1–7 из DESIGN.md сделаны. Шаг 8: `Dockerfile`, `.github/workflows/ci.yaml` (тесты, затем образ
@@ -43,8 +43,9 @@ API под `/api`, остальные пути отдают собранный �
 SIGHUP, `interrupted` после `docker stop` и после `kill -9`).
 
 Не проверено:
-- первый прогон CI после слияния `docker` в `main`: сборка arm64 через QEMU, публикация `edge` в ghcr.io;
-  пакет на ghcr.io по умолчанию приватный, его надо сделать публичным.
+- первый прогон CI после слияния `docker` в `main`: сборка arm64 через QEMU, публикация `latest` в ghcr.io
+  (пакет уже публичный).
+- релиз на пуш в `main`: вычисление версии (`fetch-depth: 0`), образ `X.Y.Z` и тег `v0.1.0` первым прогоном.
 
 ## Команды
 
@@ -115,6 +116,9 @@ SIGHUP, `interrupted` после `docker stop` и после `kill -9`).
 - `tsc` не ставит бит исполнения на `dist/*.js`: в образе `rescaded`/`rescade` — обёртки на `sh`.
 - В Node 26 нет встроенного corepack: в `Dockerfile` он ставится через `npm install -g corepack@<версия>`
   (pnpm потом берётся из `packageManager`); в CI pnpm ставит `pnpm/action-setup`.
+- Версию в `package.json` не править: там всегда `0.0.0-dev`, настоящая — из git-тега, её вписывает
+  `scripts/version.mjs set` в `Dockerfile`. Тег, запушенный с `GITHUB_TOKEN`, других workflow не запускает,
+  поэтому образ собирается до тега в том же job, а не по тегу. `docs/openapi.json` поэтому тоже с `0.0.0-dev`.
 - `pnpm deploy` копирует пакет целиком, если нет `files`; у всех пакетов `"files": ["dist"]`. Зависимости `web`
   (React и т. п.) в `devDependencies`: в рантайме нужен только собранный `dist`.
 - Стадии сборки в `Dockerfile` идут на `$BUILDPLATFORM`: результат — JS без нативных модулей, restic качается под

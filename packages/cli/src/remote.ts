@@ -9,6 +9,7 @@ import {
 } from "@rescade/core";
 import type { ApiClient, ServerEvent } from "./client.js";
 import { formatBytes, formatTime, logLine, RUN_EXIT, stepLine, table } from "./output.js";
+import { VERSION } from "./version.js";
 
 /** The parts of `GET /cascades` the CLI shows. */
 interface CascadeView {
@@ -141,11 +142,12 @@ function printEvent(e: ServerEvent, runId: number, tag: (index: number) => strin
 export async function status(client: ApiClient, json: boolean): Promise<number> {
   const [daemon, cascades] = await Promise.all([client.get<DaemonView>("/status"), client.get<CascadeView[]>("/cascades")]);
   if (json) {
-    print({ daemon, cascades });
+    print({ cli: { version: VERSION }, daemon, cascades });
     return 0;
   }
   const { config } = daemon;
   console.log(`rescaded ${daemon.version}, up since ${formatTime(daemon.startedAt)}`);
+  if (daemon.version !== VERSION) console.log(`rescade ${VERSION} (this CLI) differs from the daemon`);
   console.log(`config ${config.path}, loaded ${formatTime(config.loadedAt)}`);
   if (config.lastReload && !config.lastReload.ok) {
     console.log(`reload at ${formatTime(config.lastReload.at)} failed, the config loaded before stays in use:`);
