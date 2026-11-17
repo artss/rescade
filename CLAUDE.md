@@ -40,12 +40,8 @@ API под `/api`, остальные пути отдают собранный �
 
 Проверено на Linux: `pnpm test:integration` (restic 0.19.1 с релиза), образ с bind mount настоящих каталогов
 под `/host` (backup файлов только для root, родительский снапшот при повторе, `copy` с `from`, restore со снятием префикса,
-SIGHUP, `interrupted` после `docker stop` и после `kill -9`).
-
-Не проверено:
-- первый прогон CI после слияния `docker` в `main`: сборка arm64 через QEMU, публикация `latest` в ghcr.io
-  (пакет уже публичный).
-- релиз на пуш в `main`: вычисление версии (`fetch-depth: 0`), образ `X.Y.Z` и тег `v0.1.0` первым прогоном.
+SIGHUP, `interrupted` после `docker stop` и после `kill -9`). Релиз из CI: тег `v0.1.0`, публичный образ
+`ghcr.io/artss/rescade:0.1.0` для amd64 и arm64, `rescade --version` в нём `0.1.0`.
 
 ## Команды
 
