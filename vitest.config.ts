@@ -7,7 +7,7 @@ export const coreAlias = { "@rescade/core": path.join(import.meta.dirname, "pack
 export default defineConfig({
   test: {
     projects: [
-      { resolve: { alias: coreAlias }, test: { name: "node", include: ["packages/{core,daemon,cli}/test/**/*.test.ts"] } },
+      { resolve: { alias: coreAlias }, test: { name: "node", include: ["packages/{core,daemon,cli}/test/**/*.test.ts", "scripts/**/*.test.ts"] } },
       "packages/web",
     ],
   },

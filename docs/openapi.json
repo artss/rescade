@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "rescade API",
-    "version": "1",
+    "version": "0.0.0-dev",
     "description": "Runs and history of rescade cascades. Errors are `{ \"error\": \"...\" }`; times are epoch milliseconds."
   },
   "components": {

@@ -11,6 +11,7 @@ import {
 } from "@rescade/core";
 import { ApiClient, ClientError, resolveConnection } from "./client.js";
 import { logLine, RUN_EXIT, stepLine } from "./output.js";
+import { VERSION } from "./version.js";
 import { cancelRun, listDir, listRepos, listRuns, listSnapshots, runRemote, showLog, showRun, status } from "./remote.js";
 
 const HELP = `rescade - cascades of restic commands
@@ -42,6 +43,7 @@ Options:
   --token-file <path>   API token (default: $RESCADE_TOKEN, $RESCADE_TOKEN_FILE,
                         then ~/.config/rescade/token)
   -h, --help            show this help
+  -V, --version         show the version of rescade
 
 Environment:
   RESCADE_REPO_CHECK_TIMEOUT   run --local: how long to wait for a repo to answer before a step,
@@ -332,6 +334,10 @@ async function main(argv: string[]): Promise<number> {
     case "help":
       process.stdout.write(HELP);
       return command === undefined ? 2 : 0;
+    case "-V":
+    case "--version":
+      console.log(`rescade ${VERSION}`);
+      return 0;
     default:
       console.error(`rescade: unknown command "${command}"\n`);
       process.stderr.write(HELP);
