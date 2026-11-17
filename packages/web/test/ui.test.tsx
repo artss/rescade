@@ -25,13 +25,17 @@ async function api<T>(method: "GET" | "POST", p: string): Promise<T> {
 
 describe("signing in", () => {
   it("asks for the token and tells when the daemon rejects it", async () => {
-    renderApp("/", null);
+    renderApp("/runs", null);
+    expect(screen.getByRole("heading", { level: 1, name: "rescade" })).toBeDefined();
     fireEvent.change(screen.getByLabelText("API token"), { target: { value: "wrong" } });
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
     expect(await screen.findByText("The daemon rejected the token.", {}, wait)).toBeDefined();
 
     fireEvent.change(screen.getByLabelText("API token"), { target: { value: inject("token") } });
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    // the logo in the header leads home
+    fireEvent.click(await screen.findByRole("link", { name: "rescade" }, wait));
+    expect(location.pathname).toBe("/");
     expect(await screen.findByRole("heading", { name: "daily" }, wait)).toBeDefined();
     expect(sessionStorage.getItem("rescade.token")).toBe(inject("token"));
     expect(localStorage.getItem("rescade.token")).toBeNull();
