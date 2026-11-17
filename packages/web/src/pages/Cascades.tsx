@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { formatDuration } from "../format.js";
 import { useCascades, useStartRun } from "../queries.js";
@@ -8,6 +8,7 @@ import { Badge } from "../components/Badge.js";
 import { Button } from "../components/Button.js";
 import { Card } from "../components/Card.js";
 import { ErrorBox } from "../components/ErrorBox.js";
+import { GroupedList } from "../components/Group.js";
 import { Loading } from "../components/Loading.js";
 import { RunLink } from "../components/RunLink.js";
 import { Time } from "../components/Time.js";
@@ -17,19 +18,15 @@ export function CascadesPage() {
   if (error) return <ErrorBox error={error} />;
   if (!data) return <Loading />;
   if (data.length === 0) return <p className="text-sm text-zinc-500">The config has no cascades.</p>;
-  return (
-    <div className="grid gap-3">
-      {data.map((c) => (
-        <CascadeCard key={c.name} cascade={c} />
-      ))}
-    </div>
-  );
+  return <GroupedList items={data} groupOf={(c) => c.group} keyOf={(c) => c.name} render={(c) => <CascadeCard cascade={c} />} />;
 }
 
 function CascadeCard({ cascade: c }: { cascade: CascadeView }) {
   const start = useStartRun();
   const [, navigate] = useLocation();
   const [skipped, setSkipped] = useState<string>();
+  const [stepsOpen, setStepsOpen] = useState(false);
+  const stepsId = useId();
   const run = () => {
     setSkipped(undefined);
     start.mutate(c.name, {
@@ -49,9 +46,19 @@ function CascadeCard({ cascade: c }: { cascade: CascadeView }) {
           </h2>
           {c.description && <p className="text-sm text-zinc-500">{c.description}</p>}
         </div>
-        <Button onClick={run} disabled={start.isPending || c.active !== null} aria-label={`Run ${c.name}`}>
-          Run
-        </Button>
+        {c.active ? (
+          <Link
+            href={`/runs/${c.active.id}`}
+            aria-label={`Running ${c.name}`}
+            className="rounded border border-sky-600 px-3 py-1 text-sm font-medium text-sky-700 hover:bg-sky-50 dark:border-sky-400 dark:text-sky-400 dark:hover:bg-sky-950"
+          >
+            Running
+          </Link>
+        ) : (
+          <Button onClick={run} disabled={start.isPending} aria-label={`Run ${c.name}`}>
+            Run
+          </Button>
+        )}
       </div>
       {start.error && <div className="mt-2"><ErrorBox error={start.error} /></div>}
       {skipped && <p className="mt-2 text-sm text-amber-700 dark:text-amber-400">Skipped: {skipped}</p>}
@@ -89,11 +96,26 @@ function CascadeCard({ cascade: c }: { cascade: CascadeView }) {
         )}
       </dl>
 
-      <ol className="mt-3 grid gap-1.5" aria-label={`Steps of ${c.name}`}>
-        {c.steps.map((s, i) => (
-          <StepItem key={i} index={i} step={s} />
-        ))}
-      </ol>
+      <button
+        type="button"
+        aria-expanded={stepsOpen}
+        aria-controls={stepsId}
+        aria-label={`Steps of ${c.name}`}
+        onClick={() => setStepsOpen(!stepsOpen)}
+        className="mt-3 flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+      >
+        <span aria-hidden className={`inline-block transition-transform ${stepsOpen ? "rotate-90" : ""}`}>
+          ▸
+        </span>
+        Steps ({c.steps.length})
+      </button>
+      {stepsOpen && (
+        <ol id={stepsId} className="mt-2 grid gap-1.5" aria-label={`Steps of ${c.name}`}>
+          {c.steps.map((s, i) => (
+            <StepItem key={i} index={i} step={s} />
+          ))}
+        </ol>
+      )}
     </Card>
   );
 }

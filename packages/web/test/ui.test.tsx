@@ -43,6 +43,9 @@ describe("cascades and runs", () => {
     renderApp("/");
     expect(await screen.findByText("Forget old snapshots", {}, wait)).toBeDefined();
     expect(await screen.findByText("live", {}, wait)).toBeDefined();
+    expect(screen.queryByRole("list", { name: "Steps of home" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Steps of home" }));
+    fireEvent.click(screen.getByRole("button", { name: "Steps of daily" }));
     const home = screen.getByRole("list", { name: "Steps of home" });
     expect(within(home).getByText("Paths").nextElementSibling?.textContent).toBe("/home");
     expect(within(screen.getByRole("list", { name: "Steps of daily" })).getByText("7 daily")).toBeDefined();
@@ -54,6 +57,24 @@ describe("cascades and runs", () => {
     await waitFor(() => expect(within(screen.getByRole("heading", { level: 1 }).parentElement!).getByText("success")), wait);
     await waitFor(() => expect(screen.getByTestId("log").textContent).toContain("Applying Policy: keep 7 daily snapshots"), wait);
     expect(screen.getByTestId("log").textContent).toContain("==> [1] retain a");
+  });
+
+  it("groups cascades under headings that collapse, ungrouped ones stay as they are", async () => {
+    renderApp("/");
+    const group = await screen.findByRole("region", { name: "regular" }, wait);
+    expect(within(group).getByRole("heading", { name: "daily" })).toBeDefined();
+    expect(within(group).getByRole("heading", { name: "home" })).toBeDefined();
+    expect(within(group).queryByRole("heading", { name: "slow" })).toBeNull();
+    const toggle = within(group).getByRole("button", { name: /regular/ });
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("heading", { name: "daily" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "slow" })).toBeDefined();
+
+    fireEvent.click(toggle);
+    expect(screen.getByRole("heading", { name: "daily" })).toBeDefined();
   });
 
   it("lists runs of a cascade and opens one", async () => {
@@ -72,7 +93,14 @@ describe("cascades and runs", () => {
     try {
       const view = renderApp("/repos");
       await waitFor(() => expect(screen.getByRole("link", { name: `run ${run.id}` })), wait);
+      expect(within(screen.getByRole("region", { name: "offsite" })).getByRole("link", { name: "b" })).toBeDefined();
       view.unmount();
+
+      const cascades = renderApp("/");
+      const running = await screen.findByRole("link", { name: "Running slow" }, wait);
+      expect(running.getAttribute("href")).toBe(`/runs/${run.id}`);
+      expect(screen.queryByRole("button", { name: "Run slow" })).toBeNull();
+      cascades.unmount();
 
       renderApp(`/runs/${run.id}`);
       await waitFor(() => expect(screen.getByTestId("log").textContent).toContain("holding"), wait);

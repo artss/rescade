@@ -4,6 +4,7 @@
 
 repos:
   system-rest:
+    group: offsite
     # credentials in the URL are per repo, unlike RESTIC_REST_USERNAME / RESTIC_REST_PASSWORD
     path: rest:https://backup:${REST_PASSWORD}@rest.backups.lan:8000/system/
     password: ${SYSTEM_REST_PASSWORD}
@@ -13,6 +14,7 @@ repos:
     retention: { daily: 30, weekly: 12 }
 
   system-s3:
+    group: offsite
     path: s3:s3.eu-central-1.amazonaws.com/example-backups/system
     password: ${SYSTEM_S3_PASSWORD}
     from: system-local
@@ -25,6 +27,7 @@ repos:
     retention: { weekly: 12, monthly: 24 }
 
   system-minio:
+    group: offsite
     path: s3:https://minio.backups.lan:9000/system
     password: ${SYSTEM_MINIO_PASSWORD}
     from: system-local
@@ -35,6 +38,7 @@ repos:
       s3.bucket-lookup: path
 
   system-b2:
+    group: offsite
     path: b2:example-backups:system
     password: ${SYSTEM_B2_PASSWORD}
     from: system-local
@@ -43,6 +47,7 @@ repos:
       B2_ACCOUNT_KEY: ${B2_APPLICATION_KEY}
 
   system-azure:
+    group: offsite
     path: azure:system-backups:/
     password: ${SYSTEM_AZURE_PASSWORD}
     from: system-local
@@ -53,6 +58,7 @@ repos:
       azure.access-tier: Cool
 
   system-gs:
+    group: offsite
     path: gs:example-backups:/system
     password: ${SYSTEM_GS_PASSWORD}
     from: system-local
@@ -61,6 +67,7 @@ repos:
       GOOGLE_APPLICATION_CREDENTIALS: /etc/rescade/gcs-service-account.json
 
   system-swift:
+    group: offsite
     path: swift:system-backups:/
     password: ${SYSTEM_SWIFT_PASSWORD}
     from: system-local
@@ -71,6 +78,7 @@ repos:
       OS_APPLICATION_CREDENTIAL_SECRET: ${SWIFT_CREDENTIAL_SECRET}
 
   system-rclone:
+    group: offsite
     # rclone reads a whole remote from RCLONE_CONFIG_<REMOTE>_<KEY>, so it needs no rclone.conf
     path: rclone:offsite:backups/system
     password: ${SYSTEM_RCLONE_PASSWORD}

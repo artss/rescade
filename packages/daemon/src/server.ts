@@ -253,6 +253,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
       const active = new Map(deps.runner.running().map((r) => [r.cascade, r]));
       return Object.entries(config.cascades).map(([name, c]) => ({
         name,
+        group: c.group ?? null,
         description: c.description ?? null,
         schedule: c.schedule,
         timezone: c.timezone ?? null,

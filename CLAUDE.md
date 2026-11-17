@@ -24,12 +24,12 @@ API под `/api`, остальные пути отдают собранный �
 и логов `Store.prune`, локи restic `src/restic/lockfiles.ts` (читаются в ensure перед каждым шагом). `packages/cli`: `validate`, `run --local`, а через
 демон `run [--detach]`, `status`, `runs`, `show`, `log`, `cancel`, `repos` (`client.ts` HTTP и SSE, `remote.ts` команды).
 `packages/web`: веб-интерфейс (React, TanStack Query, Tailwind 4, Vite, `wouter`; `api.ts`/`token.ts` запросы и токен,
-`sse.ts` поток событий через fetch, `queries.ts` хуки и `applyEvent`, `log.ts` склейка лога по `id`, `pages/*`), демон
+`sse.ts` поток событий через fetch, `queries.ts` хуки и `applyEvent`, `log.ts` склейка лога по `id`, `groups.ts` и `components/Group.tsx` группы по полю `group` у репо и каскадов, `pages/*`), демон
 находит его сборку через `import.meta.resolve("@rescade/web/package.json")`.
 Просмотр снапшотов (`src/restic/snapshots.ts`: `restic snapshots`/`ls` без мьютекса, `--retry-lock 10s`; маршруты
 `/api/repos/:name/snapshots[/:id/ls]`, CLI `snapshots` и `ls`, страница репо `pages/Repo.tsx` (состояние и снапшоты, ссылка с имени на `/repos`); у шага backup поле
 `repo`, схема базы v2 с миграцией в `Store.open`). Бэкенды restic (`src/config/backends.ts`: префикс `path`, опции по бэкенду, конфликты `env`/`options` в парах
-`copy`/`from`; описание в `docs/backends.md`). 237 тестов vitest (проекты `node` и `web`), фейковый restic в `packages/core/test/fake-restic.mjs`, 8 интеграционных с настоящим restic
+`copy`/`from`; описание в `docs/backends.md`). 239 тестов vitest (проекты `node` и `web`), фейковый restic в `packages/core/test/fake-restic.mjs`, 8 интеграционных с настоящим restic
 (проверено на 0.19.1), пример в `examples/config`.
 
 Шаги 1–7 из DESIGN.md сделаны. Шаг 8: `Dockerfile`, `.github/workflows/ci.yaml` (тесты, затем образ
