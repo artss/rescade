@@ -188,15 +188,18 @@ describe("snapshots", () => {
     expect(within(notes).getByText("1000:100")).toBeDefined();
     expect(within(notes).getByText("-rw-r--r--")).toBeDefined();
     expect(within(notes).getByText(formatTime(Date.parse("2026-10-31T08:00:00Z")))).toBeDefined();
-    expect(within(within(tree).getByRole("treeitem", { name: "link" })).getByText("yes")).toBeDefined();
+    expect(within(within(tree).getByRole("treeitem", { name: "link" })).getByRole("img", { name: "symlink" })).toBeDefined();
+    expect(within(notes).queryByRole("img", { name: "symlink" })).toBeNull();
     expect(screen.getByRole("link", { name: "b" }).getAttribute("href")).toBe("/repos/b");
 
     // nothing is checked, so there is nothing to restore
     expect(screen.queryByRole("button", { name: "Restore" })).toBeNull();
-    const box = (p: string) => screen.getByRole("checkbox", { name: `Restore ${p}` }) as HTMLInputElement;
-    fireEvent.click(box("/home/u"));
-    expect(box("/home/u/notes.txt").checked).toBe(true);
-    expect(box("/home").indeterminate).toBe(true);
+    const checkbox = (p: string) => screen.getByRole("checkbox", { name: `Restore ${p}` });
+    const box = (p: string) => checkbox(p).getAttribute("aria-checked");
+    expect(box("/home/u")).toBe("false");
+    fireEvent.click(checkbox("/home/u"));
+    expect(box("/home/u/notes.txt")).toBe("true");
+    expect(box("/home")).toBe("mixed");
     // checking a box does not open or close the directory
     expect(within(tree).getByRole("treeitem", { name: "u" }).getAttribute("aria-expanded")).toBe("true");
     const target = path.join(inject("fakeDir"), "restore", "dddddddd");
@@ -204,10 +207,10 @@ describe("snapshots", () => {
     expect(screen.getByText("1 path")).toBeDefined();
 
     // unchecking a file of the checked directory leaves the rest of it
-    fireEvent.click(box("/home/u/notes.txt"));
-    expect(box("/home/u").indeterminate).toBe(true);
-    expect(box("/home/u/link").checked).toBe(true);
-    fireEvent.click(box("/home/v"));
+    fireEvent.click(checkbox("/home/u/notes.txt"));
+    expect(box("/home/u")).toBe("mixed");
+    expect(box("/home/u/link")).toBe("true");
+    fireEvent.click(checkbox("/home/v"));
     expect(screen.getByText("2 paths")).toBeDefined();
 
     fireEvent.click(screen.getByRole("button", { name: "Restore" }));
@@ -241,6 +244,15 @@ describe("snapshots", () => {
     fireEvent.click(await screen.findByRole("checkbox", { name: "Restore /etc" }, wait));
     expect((screen.getByRole("button", { name: "Restore" }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText(/Restore is off/)).toBeDefined();
+
+    // while a directory is listed, a spinner stands in place of its checkbox; the daemon knows no such snapshot
+    fireEvent.click(screen.getByRole("treeitem", { name: "etc" }));
+    await waitFor(() => {
+      expect(screen.getByRole("img", { name: "Loading /etc" })).toBeDefined();
+      expect(screen.queryByRole("checkbox", { name: "Restore /etc" })).toBeNull();
+    }, wait);
+    expect(await screen.findByRole("button", { name: "Retry" }, wait)).toBeDefined();
+    expect(screen.getByRole("checkbox", { name: "Restore /etc" })).toBeDefined();
   });
 
   it("says when there is no such repo", async () => {

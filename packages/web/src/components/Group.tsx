@@ -1,6 +1,8 @@
+import { mdiChevronRight } from "@mdi/js";
 import { Fragment, useId, useState, type ReactNode } from "react";
 import { isCollapsed, setCollapsed } from "../collapsed.js";
 import { groupItems } from "../groups.js";
+import { Icon } from "./Icon.js";
 
 /** A heading that collapses and expands its items; expanded at first, then as the browser remembers for `list`. */
 export function Group({ list, name, count, children }: { list: string; name: string; count: number; children: ReactNode }) {
@@ -20,9 +22,7 @@ export function Group({ list, name, count, children }: { list: string; name: str
           onClick={toggle}
           className="flex w-full items-center gap-2 py-1 text-left text-sm font-semibold text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
         >
-          <span aria-hidden className={`inline-block transition-transform ${open ? "rotate-90" : ""}`}>
-            ▸
-          </span>
+          <Icon path={mdiChevronRight} className={`size-4 transition-transform ${open ? "rotate-90" : ""}`} />
           {name}
           <span className="font-normal text-zinc-400">{count}</span>
         </button>
