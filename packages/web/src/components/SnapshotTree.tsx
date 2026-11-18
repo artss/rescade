@@ -1,3 +1,4 @@
+import { mdiCheckboxBlankOutline, mdiCheckboxOutline, mdiChevronRight, mdiLink, mdiLoading, mdiMinusBoxOutline } from "@mdi/js";
 import { asyncDataLoaderFeature, hotkeysCoreFeature, type ItemInstance } from "@headless-tree/core";
 import { useTree } from "@headless-tree/react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -5,10 +6,11 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import { formatBytes } from "../format.js";
 import { keys, snapshotDirQuery, useRestore, useStatus } from "../queries.js";
-import { checkState, restorePaths, toggle, type Children, type Picked } from "../selection.js";
+import { checkState, restorePaths, toggle, type CheckState, type Children, type Picked } from "../selection.js";
 import type { Snapshot, SnapshotDir, SnapshotEntry } from "../types.js";
 import { Button } from "./Button.js";
 import { ErrorBox } from "./ErrorBox.js";
+import { Icon } from "./Icon.js";
 import { Time } from "./Time.js";
 
 /** A tree item: an entry of the snapshot, or a line about a directory's listing (cut short, empty, failed). */
@@ -16,8 +18,15 @@ type Node = { kind: "entry"; entry: SnapshotEntry } | { kind: "note"; dir: strin
 
 const ROOT = "/";
 const INDENT = 20;
-// name, owner, permissions, size, modified, symlink
-const columns = "grid grid-cols-[minmax(16rem,1fr)_6rem_7rem_6rem_12rem_4.5rem] items-center gap-x-3";
+// name, symlink, permissions, owner, size, modified
+const columns = "grid grid-cols-[minmax(16rem,1fr)_4.5rem_7rem_6rem_6rem_12rem] items-center gap-x-3";
+
+const boxIcon: Record<CheckState, string> = {
+  unchecked: mdiCheckboxBlankOutline,
+  checked: mdiCheckboxOutline,
+  indeterminate: mdiMinusBoxOutline,
+};
+const ariaChecked = { unchecked: "false", checked: "true", indeterminate: "mixed" } as const;
 
 /** Directories first, then by name. */
 const sorted = (entries: SnapshotEntry[]) =>
@@ -78,12 +87,12 @@ export function SnapshotTree({ repo, snapshot }: { repo: string; snapshot: Snaps
       <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         <div className="min-w-fit text-sm">
           <div className={`${columns} border-b border-zinc-200 px-3 py-2 text-xs font-medium uppercase tracking-wide text-zinc-500 dark:border-zinc-800`}>
-            <span className="pl-11">Name</span>
-            <span>Owner</span>
+            <span className="pl-12">Name</span>
+            <span>Symlink</span>
             <span>Permissions</span>
+            <span>Owner</span>
             <span className="text-right">Size</span>
             <span>Modified</span>
-            <span>Symlink</span>
           </div>
           <div {...tree.getContainerProps("Files")} className="py-1 outline-none">
             {items.map((item) => (
@@ -116,7 +125,7 @@ function Row({
   if (d?.kind !== "entry") {
     return (
       <div {...item.getProps()} className={`${focus} px-3 py-1`}>
-        <div style={pad} className={`pl-11 text-sm ${d?.failed ? "text-red-700 dark:text-red-400" : "text-zinc-500"}`}>
+        <div style={pad} className={`pl-12 text-sm ${d?.failed ? "text-red-700 dark:text-red-400" : "text-zinc-500"}`}>
           {d?.text}
           {d?.failed && (
             <button
@@ -142,31 +151,39 @@ function Row({
   return (
     <div {...item.getProps()} className={`${columns} ${focus} cursor-default px-3 py-0.5 hover:bg-zinc-50 dark:hover:bg-zinc-800/50`}>
       <span style={pad} className="flex min-w-0 items-center gap-1.5">
-        <input
-          type="checkbox"
-          aria-label={`Restore ${e.path}`}
-          checked={state === "checked"}
-          ref={(el) => {
-            if (el) el.indeterminate = state === "indeterminate";
-          }}
-          disabled={next === undefined}
-          title={next === undefined ? "The directory above has more entries than are shown" : undefined}
-          onClick={(ev) => ev.stopPropagation()}
-          onChange={() => next && onPick(next)}
-          className="size-4 shrink-0 accent-sky-600"
-        />
-        <span aria-hidden className="w-4 shrink-0 text-center text-zinc-400">
-          {folder ? (item.isLoading() ? "…" : item.isExpanded() ? "▾" : "▸") : ""}
+        {folder && item.isLoading() ? (
+          <span role="status" className="text-sky-600 dark:text-sky-400">
+            <Icon path={mdiLoading} label={`Loading ${e.path}`} className="size-5 animate-spin" />
+          </span>
+        ) : (
+          <button
+            type="button"
+            role="checkbox"
+            aria-checked={ariaChecked[state]}
+            aria-label={`Restore ${e.path}`}
+            disabled={next === undefined}
+            title={next === undefined ? "The directory above has more entries than are shown" : undefined}
+            onClick={(ev) => {
+              ev.stopPropagation();
+              if (next) onPick(next);
+            }}
+            className={`rounded disabled:cursor-not-allowed disabled:opacity-40 ${state === "unchecked" ? "text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300" : "text-sky-600 dark:text-sky-400"}`}
+          >
+            <Icon path={boxIcon[state]} className="size-5" />
+          </button>
+        )}
+        <span className="w-4 shrink-0 text-zinc-400">
+          {folder && <Icon path={mdiChevronRight} className={`size-4 transition-transform ${item.isExpanded() ? "rotate-90" : ""}`} />}
         </span>
         <span className="break-all font-mono">{folder ? `${e.name}/` : e.name}</span>
       </span>
-      <span className="font-mono text-xs text-zinc-500">{e.uid === undefined ? "" : `${e.uid}:${e.gid ?? "?"}`}</span>
+      <span className="text-zinc-500">{e.type === "symlink" && <Icon path={mdiLink} label="symlink" className="size-4" />}</span>
       <span className="font-mono text-xs text-zinc-500">{e.permissions}</span>
+      <span className="font-mono text-xs text-zinc-500">{e.uid === undefined ? "" : `${e.uid}:${e.gid ?? "?"}`}</span>
       <span className="whitespace-nowrap text-right">{folder || e.size === undefined ? "" : formatBytes(e.size)}</span>
       <span className="whitespace-nowrap text-zinc-500">
         <Time ms={e.mtime} />
       </span>
-      <span className="text-xs text-zinc-500">{e.type === "symlink" ? "yes" : ""}</span>
     </div>
   );
 }

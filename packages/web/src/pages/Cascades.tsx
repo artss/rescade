@@ -1,3 +1,4 @@
+import { mdiChevronRight } from "@mdi/js";
 import { useId, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { formatDuration } from "../format.js";
@@ -7,6 +8,7 @@ import type { CascadeStep, CascadeView } from "../types.js";
 import { Badge } from "../components/Badge.js";
 import { Button } from "../components/Button.js";
 import { Card } from "../components/Card.js";
+import { Icon } from "../components/Icon.js";
 import { ErrorBox } from "../components/ErrorBox.js";
 import { GroupedList } from "../components/Group.js";
 import { Loading } from "../components/Loading.js";
@@ -104,9 +106,7 @@ function CascadeCard({ cascade: c }: { cascade: CascadeView }) {
         onClick={() => setStepsOpen(!stepsOpen)}
         className="mt-3 flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
       >
-        <span aria-hidden className={`inline-block transition-transform ${stepsOpen ? "rotate-90" : ""}`}>
-          ▸
-        </span>
+        <Icon path={mdiChevronRight} className={`size-4 transition-transform ${stepsOpen ? "rotate-90" : ""}`} />
         Steps ({c.steps.length})
       </button>
       {stepsOpen && (
