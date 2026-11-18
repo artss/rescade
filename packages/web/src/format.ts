@@ -1,9 +1,15 @@
+// subpath imports: the "date-fns" index loads every function, ~1 s on each CLI start
+import { differenceInCalendarDays } from "date-fns/differenceInCalendarDays";
+import { format } from "date-fns/format";
+
 const p = (n: number) => String(n).padStart(2, "0");
 
-/** Local time as "2026-11-15 03:00:00". */
-export function formatTime(ms: number): string {
-  const d = new Date(ms);
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+const NEAR_DAYS: Record<number, string> = { [-1]: "yesterday", 0: "today", 1: "tomorrow" };
+
+/** Local time as "15 Nov 2026 at 03:00:00", or "today at 03:00:00" (also "yesterday", "tomorrow"). */
+export function formatTime(ms: number, now: number = Date.now()): string {
+  const day = NEAR_DAYS[differenceInCalendarDays(ms, now)] ?? format(ms, "dd MMM yyyy");
+  return `${day} at ${format(ms, "HH:mm:ss")}`;
 }
 
 /** "850ms", "12s", "3m 05s", "2h 07m". */

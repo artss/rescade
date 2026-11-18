@@ -58,7 +58,7 @@ SIGHUP, `interrupted` после `docker stop` и после `kill -9`). Рел�
 - TypeScript строгий (`strict`, `noUncheckedIndexedAccess`), ESM, `module: NodeNext`: импорты с расширением `.js`.
 - В `tsconfig.base.json` явно `"types": ["node"]` (в TypeScript 7 типы Node по умолчанию не подключаются).
 - Node >= 26 (текущая LTS, проверялось на 26.13): `node:sqlite` без флага и без ExperimentalWarning. `.nvmrc` = `26`, `engineStrict` в
-  `pnpm-workspace.yaml` (проверяет только `pnpm install`, не `pnpm test`). Зависимости: `yaml`, `zod` (v4), `croner`; тесты `vitest`.
+  `pnpm-workspace.yaml` (проверяет только `pnpm install`, не `pnpm test`). Зависимости: `yaml`, `zod` (v4), `croner`, в CLI и web `date-fns` (`formatTime`); тесты `vitest`.
 - Ядро (`core`) без сетевого кода и без обращений к `process` вне CLI/демона. Внешние процессы запускать
   через `spawn` без shell, секреты передавать через окружение процесса, а не через аргументы.
 - Ошибки конфигурации всегда с позицией (файл, строка, колонка). Одна проверка выдаёт как можно больше ошибок за прогон.
@@ -136,5 +136,7 @@ SIGHUP, `interrupted` после `docker stop` и после `kill -9`). Рел�
   (кроме `/`), по этому и отличаем «нет пути» от пустого каталога. Неизвестный id: код 1, `no matching ID found`.
 - Схема SQLite меняется через `MIGRATIONS` в `store.ts` (ключ = версия, с которой обновляем) и `SCHEMA_VERSION`;
   `SCHEMA` всегда описывает последнюю версию для новой базы.
+- `date-fns` импортируется по подпутям (`date-fns/format`): индекс пакета грузит все функции, это ~1 с на каждый запуск
+  CLI, и сквозные тесты CLI упирались в таймаут.
 - В режиме `--allow-missing-env` значения подменяются на `<NAME is unset>`: годится для валидации, не для запуска
   (список в `LoadResult.missingEnv`).
