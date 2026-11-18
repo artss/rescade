@@ -22,6 +22,8 @@ const node = (p: string, type: string, extra: Record<string, unknown> = {}) => (
   mode: 420,
   permissions: type === "dir" ? "drwxr-xr-x" : "-rw-r--r--",
   mtime: "2026-11-01T10:00:00+01:00",
+  uid: 1000,
+  gid: 100,
   ...extra,
 });
 
@@ -116,8 +118,8 @@ describe("listDir", () => {
     expect(r.value.snapshot.id).toBe(ID1);
     expect(r.value.truncated).toBe(false);
     expect(r.value.entries).toEqual([
-      { name: "a.txt", type: "file", path: "/home/u/a.txt", size: 12, mtime: Date.parse("2026-11-01T09:00:00Z"), permissions: "-rw-r--r--" },
-      { name: "sub", type: "dir", path: "/home/u/sub", mtime: Date.parse("2026-11-01T09:00:00Z"), permissions: "drwxr-xr-x" },
+      { name: "a.txt", type: "file", path: "/home/u/a.txt", size: 12, mtime: Date.parse("2026-11-01T09:00:00Z"), permissions: "-rw-r--r--", uid: 1000, gid: 100 },
+      { name: "sub", type: "dir", path: "/home/u/sub", mtime: Date.parse("2026-11-01T09:00:00Z"), permissions: "drwxr-xr-x", uid: 1000, gid: 100 },
     ]);
     expect(fake.calls()[0]?.args).toEqual(["--json", "--retry-lock", "10s", "--", "11111111", "/home/u"]);
   });

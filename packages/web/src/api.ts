@@ -10,21 +10,24 @@ export class ApiError extends Error {
   }
 }
 
-/** The API is served next to the page, under `/api`. */
-export async function request<T>(method: "GET" | "POST", path: string, signal?: AbortSignal): Promise<T> {
-  const res = await send(method, path, signal);
+/** The API is served next to the page, under `/api`. A `body` is sent as JSON. */
+export async function request<T>(method: "GET" | "POST", path: string, signal?: AbortSignal, body?: unknown): Promise<T> {
+  const res = await send(method, path, signal, body);
   return (await res.json()) as T;
 }
 
 /** Sends a request with the token and turns an error answer into ApiError; a 401 drops the token. */
-export async function send(method: "GET" | "POST", path: string, signal?: AbortSignal): Promise<Response> {
+export async function send(method: "GET" | "POST", path: string, signal?: AbortSignal, body?: unknown): Promise<Response> {
   const token = getToken();
+  const headers: Record<string, string> = token === null ? {} : { authorization: `Bearer ${token}` };
+  if (body !== undefined) headers["content-type"] = "application/json";
   let res: Response;
   try {
     res = await fetch(`/api${path}`, {
       method,
-      headers: token === null ? {} : { authorization: `Bearer ${token}` },
+      headers,
       signal,
+      ...(body !== undefined && { body: JSON.stringify(body) }),
     });
   } catch (e) {
     if (signal?.aborted) throw e;

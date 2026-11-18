@@ -31,6 +31,9 @@ export interface SnapshotEntry {
   mtime?: number;
   /** e.g. "drwxr-xr-x". */
   permissions?: string;
+  /** Numeric owner as stored in the snapshot; restic keeps the names too, but `ls` does not show them. */
+  uid?: number;
+  gid?: number;
 }
 
 export interface SnapshotDir {
@@ -208,5 +211,9 @@ function toEntry(v: Record<string, unknown>): SnapshotEntry | undefined {
   if (size !== undefined) e.size = size;
   if (mtime !== undefined) e.mtime = mtime;
   if (permissions !== undefined) e.permissions = permissions;
+  const uid = num(v.uid);
+  const gid = num(v.gid);
+  if (uid !== undefined) e.uid = uid;
+  if (gid !== undefined) e.gid = gid;
   return e;
 }

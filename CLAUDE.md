@@ -27,9 +27,10 @@ API под `/api`, остальные пути отдают собранный �
 `sse.ts` поток событий через fetch, `queries.ts` хуки и `applyEvent`, `log.ts` склейка лога по `id`, `groups.ts` и `components/Group.tsx` группы по полю `group` у репо и каскадов (свёрнутые помнятся в `localStorage`, `collapsed.ts`), `pages/*`), демон
 находит его сборку через `import.meta.resolve("@rescade/web/package.json")`.
 Просмотр снапшотов (`src/restic/snapshots.ts`: `restic snapshots`/`ls` без мьютекса, `--retry-lock 10s`; маршруты
-`/api/repos/:name/snapshots[/:id/ls]`, CLI `snapshots` и `ls`, страница репо `pages/Repo.tsx` (состояние и снапшоты, ссылка с имени на `/repos`); у шага backup поле
+`/api/repos/:name/snapshots[/:id/ls]`, CLI `snapshots` и `ls`, страница репо `pages/Repo.tsx` (состояние и снапшоты, ссылка с имени на `/repos`),
+снапшот деревом `components/SnapshotTree.tsx` (`@headless-tree`, подгрузка каталога при раскрытии, чекбоксы для restore, логика выбора в `selection.ts`); у шага backup поле
 `repo`, схема базы v2 с миграцией в `Store.open`). Бэкенды restic (`src/config/backends.ts`: префикс `path`, опции по бэкенду, конфликты `env`/`options` в парах
-`copy`/`from`; описание в `docs/backends.md`). 270 тестов vitest (проекты `node` и `web`), фейковый restic в `packages/core/test/fake-restic.mjs`, 9 интеграционных с настоящим restic
+`copy`/`from`; описание в `docs/backends.md`). 277 тестов vitest (проекты `node` и `web`), фейковый restic в `packages/core/test/fake-restic.mjs`, 9 интеграционных с настоящим restic
 (проверено на 0.19.1), пример в `examples/config`.
 
 Шаги 1–7 из DESIGN.md сделаны. Шаг 8: `Dockerfile`, `.github/workflows/ci.yaml` (тесты, затем образ
@@ -38,8 +39,8 @@ API под `/api`, остальные пути отдают собранный �
 
 Шаг 9 (восстановление): просмотр снапшотов и restore в ядре, API и CLI сделаны (`runRestore`/`restoreStep` в
 `src/run/cascade.ts`, `Runner.restore`, запуск без `cascade` с полем `restore`, схема базы v3, `--restore-dir` /
-`RESCADE_RESTORE_DIR` у демона, `POST /api/repos/:name/snapshots/:id/restore`, CLI `restore`). Веб-интерфейс для
-restore — следующий шаг.
+`RESCADE_RESTORE_DIR` у демона, `POST /api/repos/:name/snapshots/:id/restore`, CLI `restore`, в вебе чекбоксы
+в дереве снапшота и кнопка Restore; каталог восстановления в `GET /api/status` как `restoreDir`).
 
 Проверено на Linux: `pnpm test:integration` (restic 0.19.1 с релиза), образ с bind mount настоящих каталогов
 под `/host` (backup файлов только для root, родительский снапшот при повторе, `copy` с `from`, restore со снятием префикса,
@@ -61,7 +62,7 @@ SIGHUP, `interrupted` после `docker stop` и после `kill -9`). Рел�
 - TypeScript строгий (`strict`, `noUncheckedIndexedAccess`), ESM, `module: NodeNext`: импорты с расширением `.js`.
 - В `tsconfig.base.json` явно `"types": ["node"]` (в TypeScript 7 типы Node по умолчанию не подключаются).
 - Node >= 26 (текущая LTS, проверялось на 26.13): `node:sqlite` без флага и без ExperimentalWarning. `.nvmrc` = `26`, `engineStrict` в
-  `pnpm-workspace.yaml` (проверяет только `pnpm install`, не `pnpm test`). Зависимости: `yaml`, `zod` (v4), `croner`, в CLI и web `date-fns` (`formatTime`); тесты `vitest`.
+  `pnpm-workspace.yaml` (проверяет только `pnpm install`, не `pnpm test`). Зависимости: `yaml`, `zod` (v4), `croner`, в CLI и web `date-fns` (`formatTime`), в web `@headless-tree/core` и `/react`; тесты `vitest`.
 - Ядро (`core`) без сетевого кода и без обращений к `process` вне CLI/демона. Внешние процессы запускать
   через `spawn` без shell, секреты передавать через окружение процесса, а не через аргументы.
 - Ошибки конфигурации всегда с позицией (файл, строка, колонка). Одна проверка выдаёт как можно больше ошибок за прогон.
@@ -146,5 +147,9 @@ SIGHUP, `interrupted` после `docker stop` и после `kill -9`). Рел�
 - Fastify (ajv с `removeAdditional`) молча выкидывает лишние поля тела при `additionalProperties: false`, а не
   отвечает 400. POST без тела валидируется как `undefined` («body must be object»), поэтому у restore `preValidation`
   подставляет `{}`.
+- headless-tree (1.8): если `getChildrenWithData` бросает, каталог навсегда остаётся «загружается» (а `expand` при загрузке
+  ничего не делает), поэтому загрузчик ловит ошибку и отдаёт строку-заметку с Retry (`invalidateChildrenIds`). Встроенный
+  `checkboxesFeature` с `propagateCheckedState` при отметке каталога рекурсивно грузит всё поддерево; выбор свой.
+  Клик по строке (`getProps().onClick`) раскрывает каталог, поэтому у чекбокса `stopPropagation`.
 - В режиме `--allow-missing-env` значения подменяются на `<NAME is unset>`: годится для валидации, не для запуска
   (список в `LoadResult.missingEnv`).

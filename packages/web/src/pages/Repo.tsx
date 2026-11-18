@@ -1,18 +1,16 @@
-import { Link, useSearch } from "wouter";
+import { Link } from "wouter";
 import { formatBytes } from "../format.js";
 import { useRepos, useSnapshotDir, useSnapshots } from "../queries.js";
-import type { SnapshotEntry } from "../types.js";
-import { Card } from "../components/Card.js";
 import { ErrorBox } from "../components/ErrorBox.js";
 import { Loading } from "../components/Loading.js";
 import { RepoCard, repoHref, StaleLocksNote } from "../components/RepoCard.js";
+import { SnapshotTree } from "../components/SnapshotTree.js";
 import { Time } from "../components/Time.js";
 import { td, th } from "../components/table.js";
 
 const link = "text-sky-700 hover:underline dark:text-sky-400";
 
-export const snapshotHref = (repo: string, id: string, path?: string) =>
-  `${repoHref(repo)}/snapshots/${encodeURIComponent(id)}${path === undefined || path === "/" ? "" : `?${new URLSearchParams({ path })}`}`;
+export const snapshotHref = (repo: string, id: string) => `${repoHref(repo)}/snapshots/${encodeURIComponent(id)}`;
 
 /** A repo: its state and its snapshots. */
 export function RepoPage({ repo }: { repo: string }) {
@@ -87,11 +85,9 @@ function Snapshots({ repo }: { repo: string }) {
   );
 }
 
-/** One directory of a snapshot at a time; the path is in `?path=`. */
+/** A snapshot: its files as a tree, to pick what to restore. */
 export function SnapshotPage({ repo, id }: { repo: string; id: string }) {
-  const path = new URLSearchParams(useSearch()).get("path") || "/";
-  const { data, error } = useSnapshotDir(repo, id, path);
-  const parts = path.split("/").filter(Boolean);
+  const { data, error } = useSnapshotDir(repo, id, "/");
 
   return (
     <div className="space-y-4">
@@ -112,68 +108,9 @@ export function SnapshotPage({ repo, id }: { repo: string; id: string }) {
           {data.snapshot.size !== undefined && <>, {formatBytes(data.snapshot.size)}</>}
         </p>
       )}
-
-      <nav aria-label="Path" className="break-all font-mono text-sm">
-        <Link href={snapshotHref(repo, id)} className={link}>
-          /
-        </Link>
-        {parts.map((part, i) => {
-          const to = `/${parts.slice(0, i + 1).join("/")}`;
-          return (
-            <span key={to}>
-              {i > 0 && "/"}
-              {i === parts.length - 1 ? (
-                <span>{part}</span>
-              ) : (
-                <Link href={snapshotHref(repo, id, to)} className={link}>
-                  {part}
-                </Link>
-              )}
-            </span>
-          );
-        })}
-      </nav>
-
       {error && <ErrorBox error={error} />}
       {!data && !error && <Loading />}
-      {data && (
-        <Card>
-          {data.entries.length === 0 ? (
-            <p className="text-sm text-zinc-500">Empty directory.</p>
-          ) : (
-            <table className="w-full text-sm">
-              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                {sorted(data.entries).map((e) => (
-                  <tr key={e.path}>
-                    <td className="py-1 pr-3 font-mono text-xs text-zinc-500">{e.permissions}</td>
-                    <td className="break-all py-1 pr-3 font-mono">
-                      {e.type === "dir" && e.path !== data.path ? (
-                        <Link href={snapshotHref(repo, id, e.path)} className={link}>
-                          {e.name}/
-                        </Link>
-                      ) : (
-                        e.name
-                      )}
-                    </td>
-                    <td className="whitespace-nowrap py-1 pr-3 text-right">{e.size === undefined ? "" : formatBytes(e.size)}</td>
-                    <td className="whitespace-nowrap py-1 text-zinc-500">
-                      <Time ms={e.mtime} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-          {data.truncated && (
-            <p className="mt-2 text-sm text-zinc-500">Only the first {data.entries.length} entries are shown.</p>
-          )}
-        </Card>
-      )}
+      {data && <SnapshotTree repo={repo} snapshot={data.snapshot} />}
     </div>
   );
-}
-
-/** Directories first, then by name. */
-function sorted(entries: SnapshotEntry[]): SnapshotEntry[] {
-  return [...entries].sort((a, b) => Number(b.type === "dir") - Number(a.type === "dir") || a.name.localeCompare(b.name));
 }

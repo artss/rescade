@@ -73,6 +73,8 @@ export interface DaemonStatus {
     loadedAt: number;
     lastReload?: { at: number; ok: boolean; errors: string[] };
   };
+  /** Where snapshots are restored (`<restoreDir>/<short id>`); absent = restore is off. */
+  restoreDir?: string;
 }
 
 /** Data of `GET /api/events`. */

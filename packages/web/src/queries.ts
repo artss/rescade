@@ -80,12 +80,19 @@ export const useSnapshots = (repo: string) =>
   useQuery({ queryKey: keys.snapshots(repo), queryFn: () => request<Snapshot[]>("GET", repoPath(repo)) });
 
 /** A directory of a snapshot does not change: it is not asked for again while cached. */
-export const useSnapshotDir = (repo: string, id: string, path: string) =>
-  useQuery({
-    queryKey: keys.snapshotDir(repo, id, path),
-    queryFn: () =>
-      request<SnapshotDir>("GET", `${repoPath(repo)}/${encodeURIComponent(id)}/ls?${new URLSearchParams({ path })}`),
-    staleTime: Infinity,
+export const snapshotDirQuery = (repo: string, id: string, path: string) => ({
+  queryKey: keys.snapshotDir(repo, id, path),
+  queryFn: () => request<SnapshotDir>("GET", `${repoPath(repo)}/${encodeURIComponent(id)}/ls?${new URLSearchParams({ path })}`),
+  staleTime: Infinity,
+});
+
+export const useSnapshotDir = (repo: string, id: string, path: string) => useQuery(snapshotDirQuery(repo, id, path));
+
+/** Starts restoring paths of a snapshot (all of it for none) into the daemon's restore directory. */
+export const useRestore = (repo: string, id: string) =>
+  useMutation({
+    mutationFn: (paths: string[]) =>
+      request<RunRecord>("POST", `${repoPath(repo)}/${encodeURIComponent(id)}/restore`, undefined, { paths }),
   });
 
 export const useRun = (id: number) =>

@@ -191,7 +191,7 @@ describe("the CLI through the daemon", () => {
         [id]: [
           { name: "home", type: "dir", path: "/home", permissions: "drwxr-xr-x" },
           { name: "z.txt", type: "file", path: "/home/z.txt", size: 10, permissions: "-rw-r--r--", mtime: "2026-11-01T10:00:00Z" },
-          { name: "u", type: "dir", path: "/home/u", permissions: "drwx------", mtime: "2026-11-01T10:00:00Z" },
+          { name: "u", type: "dir", path: "/home/u", permissions: "drwx------", mtime: "2026-11-01T10:00:00Z", uid: 1000, gid: 100 },
         ],
       },
     );
@@ -200,8 +200,8 @@ describe("the CLI through the daemon", () => {
     expect((await cli(["snapshots", "b"])).stdout).toBe('no snapshots in "b"\n');
 
     const ls = await cli(["ls", "a", "cccccccc", "/home"]);
-    expect(ls.stdout).toMatch(new RegExp(String.raw`^drwx------ +${T} +u/\n-rw-r--r-- +10 B +${T} +z\.txt\n$`));
-    expect((await cli(["ls", "a", id])).stdout).toMatch(/^drwxr-xr-x +home\/\n$/);
+    expect(ls.stdout).toMatch(new RegExp(String.raw`^drwx------ +1000:100 +${T} +u/\n-rw-r--r-- +- +10 B +${T} +z\.txt\n$`));
+    expect((await cli(["ls", "a", id])).stdout).toMatch(/^drwxr-xr-x +- +home\/\n$/);
 
     const missing = await cli(["ls", "a", id, "/nope"]);
     expect(missing.code).toBe(1);

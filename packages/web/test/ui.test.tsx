@@ -5,9 +5,11 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { describe, expect, inject, it } from "vitest";
 import { App, createQueryClient } from "../src/App.js";
 import { ReloadBanner } from "../src/components/Layout.js";
+import { SnapshotTree } from "../src/components/SnapshotTree.js";
+import { formatTime } from "../src/format.js";
 import { keys } from "../src/queries.js";
 import { setToken } from "../src/token.js";
-import type { DaemonStatus, RunRecord } from "../src/types.js";
+import type { DaemonStatus, RunRecord, Snapshot, SnapshotDir } from "../src/types.js";
 
 const wait = { timeout: 5000 };
 
@@ -137,16 +139,33 @@ describe("cascades and runs", () => {
 });
 
 describe("snapshots", () => {
-  it("lists the snapshots of a repo and browses one a directory at a time", async () => {
+  it("lists the snapshots of a repo, opens one as a tree and restores what is checked", async () => {
     const id = "d".repeat(64);
-    const node = (p: string, type: string, size?: number) => ({ name: p.split("/").at(-1), type, path: p, size, permissions: "-rw-r--r--" });
+    const node = (p: string, type: string, size?: number) => ({
+      name: p.split("/").at(-1),
+      type,
+      path: p,
+      size,
+      permissions: type === "symlink" ? "Lrwxrwxrwx" : "-rw-r--r--",
+      uid: 1000,
+      gid: 100,
+      mtime: "2026-10-31T08:00:00Z",
+    });
     const dir = path.join(inject("fakeDir"), "snapshots");
     await mkdir(dir, { recursive: true });
     await writeFile(
       path.join(dir, encodeURIComponent("/r/b") + ".json"),
       JSON.stringify({
         snapshots: [{ time: "2026-11-01T10:00:00Z", paths: ["/home"], hostname: "nas", username: "root", tags: ["weekly"], id, short_id: id.slice(0, 8) }],
-        nodes: { [id]: [node("/home", "dir"), node("/home/u", "dir"), node("/home/u/notes.txt", "file", 2048)] },
+        nodes: {
+          [id]: [
+            node("/home", "dir"),
+            node("/home/u", "dir"),
+            node("/home/u/notes.txt", "file", 2048),
+            node("/home/u/link", "symlink"),
+            node("/home/v", "dir"),
+          ],
+        },
       }),
     );
 
@@ -157,16 +176,44 @@ describe("snapshots", () => {
     expect(screen.getByText("Chunker polynomial")).toBeDefined();
     fireEvent.click(screen.getByRole("link", { name: "dddddddd" }));
 
-    fireEvent.click(await screen.findByRole("link", { name: "home/" }, wait));
-    fireEvent.click(await screen.findByRole("link", { name: "u/" }, wait));
-    expect(await screen.findByText("notes.txt", {}, wait)).toBeDefined();
+    // folded at first; a directory is listed when opened
+    const tree = await screen.findByRole("tree", { name: "Files" }, wait);
+    const home = await within(tree).findByRole("treeitem", { name: "home" }, wait);
+    expect(home.getAttribute("aria-expanded")).toBe("false");
+    expect(within(tree).queryByRole("treeitem", { name: "u" })).toBeNull();
+    fireEvent.click(home);
+    fireEvent.click(await within(tree).findByRole("treeitem", { name: "u" }, wait));
+    const notes = await within(tree).findByRole("treeitem", { name: "notes.txt" }, wait);
+    expect(within(notes).getByText("2.0 KiB")).toBeDefined();
+    expect(within(notes).getByText("1000:100")).toBeDefined();
+    expect(within(notes).getByText("-rw-r--r--")).toBeDefined();
+    expect(within(notes).getByText(formatTime(Date.parse("2026-10-31T08:00:00Z")))).toBeDefined();
+    expect(within(within(tree).getByRole("treeitem", { name: "link" })).getByText("yes")).toBeDefined();
     expect(screen.getByRole("link", { name: "b" }).getAttribute("href")).toBe("/repos/b");
-    expect(screen.getByText("2.0 KiB")).toBeDefined();
-    expect(location.search).toBe("?path=%2Fhome%2Fu");
 
-    // back up the path
-    fireEvent.click(within(screen.getByRole("navigation", { name: "Path" })).getByRole("link", { name: "home" }));
-    expect(await screen.findByRole("link", { name: "u/" }, wait)).toBeDefined();
+    // nothing is checked, so there is nothing to restore
+    expect(screen.queryByRole("button", { name: "Restore" })).toBeNull();
+    const box = (p: string) => screen.getByRole("checkbox", { name: `Restore ${p}` }) as HTMLInputElement;
+    fireEvent.click(box("/home/u"));
+    expect(box("/home/u/notes.txt").checked).toBe(true);
+    expect(box("/home").indeterminate).toBe(true);
+    // checking a box does not open or close the directory
+    expect(within(tree).getByRole("treeitem", { name: "u" }).getAttribute("aria-expanded")).toBe("true");
+    const target = path.join(inject("fakeDir"), "restore", "dddddddd");
+    expect(screen.getByText(target)).toBeDefined();
+    expect(screen.getByText("1 path")).toBeDefined();
+
+    // unchecking a file of the checked directory leaves the rest of it
+    fireEvent.click(box("/home/u/notes.txt"));
+    expect(box("/home/u").indeterminate).toBe(true);
+    expect(box("/home/u/link").checked).toBe(true);
+    fireEvent.click(box("/home/v"));
+    expect(screen.getByText("2 paths")).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "Restore" }));
+    await waitFor(() => expect(location.pathname).toMatch(/^\/runs\/\d+$/), wait);
+    const run = await api<RunRecord>("GET", location.pathname);
+    expect(run.restore).toMatchObject({ repo: "b", snapshot: id, paths: ["/home/u/link", "/home/v"], target });
   });
 
   it("links the snapshot of a backup step to the snapshot", async () => {
@@ -176,6 +223,24 @@ describe("snapshots", () => {
     fireEvent.click(link);
     await waitFor(() => expect(location.pathname).toMatch(/^\/repos\/a\/snapshots\/[0-9a-f]{64}$/), wait);
     expect(await screen.findByText("Empty directory.", {}, wait)).toBeDefined();
+    expect(screen.queryByRole("treeitem")).toBeNull();
+  });
+
+  it("does not offer to restore when the daemon has no restore directory", async () => {
+    const qc = createQueryClient();
+    const id = "f".repeat(64);
+    const snapshot: Snapshot = { id, shortId: id.slice(0, 8), time: 0, hostname: "nas", username: "root", paths: ["/etc"], tags: [] };
+    const root: SnapshotDir = { snapshot, path: "/", entries: [{ name: "etc", type: "dir", path: "/etc" }], truncated: false };
+    qc.setQueryData(keys.status, { version: "0.1.0", startedAt: 0, config: { path: "/c", loadedAt: 0 } } satisfies DaemonStatus);
+    qc.setQueryData(keys.snapshotDir("a", id, "/"), root);
+    render(
+      <QueryClientProvider client={qc}>
+        <SnapshotTree repo="a" snapshot={snapshot} />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Restore /etc" }, wait));
+    expect((screen.getByRole("button", { name: "Restore" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/Restore is off/)).toBeDefined();
   });
 
   it("says when there is no such repo", async () => {

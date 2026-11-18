@@ -6,6 +6,7 @@ import { parseEvents } from "../src/sse.js";
 import { formatBytes, formatDuration } from "../src/format.js";
 import { groupItems } from "../src/groups.js";
 import { stepDetails } from "../src/steps.js";
+import { checkState, parentOf, restorePaths, toggle, type Children } from "../src/selection.js";
 import type { CascadeStep, LogRecord, RunWithSteps } from "../src/types.js";
 
 async function* from(chunks: string[]) {
@@ -171,5 +172,55 @@ describe("groupItems", () => {
       "c",
       "y:d",
     ]);
+  });
+});
+
+describe("picking paths to restore", () => {
+  // what is listed: "/" has /etc and /home, /home has /home/a and /home/b, /home/a has two files; /big is cut short
+  const listed: Record<string, string[] | undefined> = {
+    "/": ["/etc", "/home", "/big"],
+    "/home": ["/home/a", "/home/b"],
+    "/home/a": ["/home/a/x", "/home/a/y"],
+    "/big": undefined,
+  };
+  const children: Children = (dir) => listed[dir];
+  const pick = (from: string[], path: string) => {
+    const next = toggle(new Set(from), path, children);
+    return next && restorePaths(next);
+  };
+
+  it("finds the parent of a path", () => {
+    expect([parentOf("/home/a"), parentOf("/home"), parentOf("/")]).toEqual(["/home", "/", undefined]);
+  });
+
+  it("keeps a picked directory alone, without what is below it", () => {
+    expect(pick([], "/home/a")).toEqual(["/home/a"]);
+    expect(pick(["/home/a/x", "/home/a/y"].slice(0, 1), "/home")).toEqual(["/home"]);
+    expect(pick(["/home"], "/home")).toEqual([]);
+  });
+
+  it("picks a directory once all its entries are picked", () => {
+    expect(pick(["/home/a/x"], "/home/a/y")).toEqual(["/home/a"]);
+    expect(pick(["/home/a"], "/home/b")).toEqual(["/home"]);
+    // not when its listing is cut short
+    expect(pick(["/big/1"], "/big/2")).toEqual(["/big/1", "/big/2"]);
+  });
+
+  it("unchecks a path inside a picked directory by picking the rest of it, level by level", () => {
+    expect(pick(["/home"], "/home/a/x")).toEqual(["/home/a/y", "/home/b"]);
+    expect(pick(["/"], "/etc")).toEqual(["/big", "/home"]);
+    // what is not listed in full cannot be split
+    expect(pick(["/big"], "/big/1")).toBeUndefined();
+  });
+
+  it("shows a directory as checked, unchecked or with something picked below", () => {
+    const picked = new Set(["/home/a", "/etc"]);
+    expect(checkState(picked, "/home/a/x")).toBe("checked");
+    expect(checkState(picked, "/home/a")).toBe("checked");
+    expect(checkState(picked, "/home")).toBe("indeterminate");
+    expect(checkState(picked, "/")).toBe("indeterminate");
+    expect(checkState(picked, "/home/b")).toBe("unchecked");
+    // a sibling with a longer name is not below
+    expect(checkState(new Set(["/home/ab"]), "/home/a")).toBe("unchecked");
   });
 });
