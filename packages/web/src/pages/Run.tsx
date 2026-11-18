@@ -38,7 +38,12 @@ export function RunPage({ id }: { id: number }) {
           <span className="text-sm text-zinc-500">{run.trigger}</span>
           {active && (
             <span className="ml-auto">
-              <Button danger onClick={() => cancel.mutate(run.id)} disabled={cancel.isPending || cancel.isSuccess}>
+              <Button
+                danger
+                onClick={() => {
+                  if (confirm(`Cancel run ${run.id}? The current step will be stopped.`)) cancel.mutate(run.id);
+                }}
+                disabled={cancel.isPending || cancel.isSuccess}>
                 {cancel.isSuccess ? "Cancelling…" : "Cancel"}
               </Button>
             </span>
