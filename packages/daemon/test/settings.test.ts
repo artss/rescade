@@ -44,6 +44,23 @@ describe("daemon settings", () => {
     expect(warnings).toEqual([]);
   });
 
+  it("takes an existing restore directory, as an absolute path", async () => {
+    const env = { RESCADE_TOKEN: "t" };
+    expect(await readSettings([], env, () => {})).not.toHaveProperty("restoreDir");
+    expect(await readSettings([], { ...env, RESCADE_RESTORE_DIR: dir }, () => {})).toMatchObject({ restoreDir: dir });
+    const rel = path.relative(process.cwd(), dir);
+    expect(await readSettings(["--restore-dir", rel], { ...env, RESCADE_RESTORE_DIR: "/nope" }, () => {})).toMatchObject({
+      restoreDir: dir,
+    });
+    await expect(readSettings(["--restore-dir", path.join(dir, "nope")], env, () => {})).rejects.toThrow(
+      `restore directory ${path.join(dir, "nope")} does not exist`,
+    );
+    const file = await tokenFile("file", "x");
+    await expect(readSettings([], { ...env, RESCADE_RESTORE_DIR: file }, () => {})).rejects.toThrow(
+      `restore directory ${file} is not a directory`,
+    );
+  });
+
   it("reads the retention periods, 0 meaning no limit", async () => {
     const s = await readSettings([], { RESCADE_TOKEN: "t", RESCADE_HISTORY_RETENTION: "0", RESCADE_LOG_RETENTION: "12h" }, () => {});
     expect(s).toMatchObject({ historyRetentionMs: undefined, logRetentionMs: 12 * 3_600_000 });

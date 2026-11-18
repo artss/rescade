@@ -56,7 +56,7 @@ export function RunsPage() {
                   <td className={td}>
                     <RunLink id={r.id}>{r.id}</RunLink>
                   </td>
-                  <td className={td}>{r.cascade}</td>
+                  <td className={td}>{r.cascade ?? "restore"}</td>
                   <td className={td}>{r.trigger}</td>
                   <td className={td}>
                     <Badge status={r.status} />

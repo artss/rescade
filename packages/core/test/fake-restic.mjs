@@ -5,12 +5,13 @@
 //   repos/<encoded path>.json   { id, chunker_polynomial, password }
 //   locks/<encoded path>.json   [{ id, time, exclusive, hostname, username, pid }], lock files left in the repo
 //   snapshots/<encoded path>.json  { snapshots: [as restic snapshots --json], nodes: { <snapshot id>: [ls nodes] } };
-//                                backup adds a snapshot without nodes
+//                                backup adds a snapshot without nodes; restore writes the file nodes it
+//                                restores into --target as files holding their path
 //   calls.jsonl                 one line per call: { cmd, args, options, repo, from, ... }
 //   sigterm                     created when a hanging call receives SIGTERM
 //
 // Switches (environment):
-//   FAKE_RESTIC_EXIT_<CMD>=n     fail <CMD> (BACKUP, INIT, CAT, COPY, CHECK, FORGET, PRUNE, LIST, SNAPSHOTS, LS)
+//   FAKE_RESTIC_EXIT_<CMD>=n     fail <CMD> (BACKUP, INIT, CAT, COPY, CHECK, FORGET, PRUNE, LIST, SNAPSHOTS, LS, RESTORE)
 //                                with exit code n;
 //                                backup still prints its summary, as real restic does for code 3
 //   FAKE_RESTIC_UNREACHABLE=a,b  repository paths that fail like an unreachable host (exit 1)
@@ -140,6 +141,31 @@ function run() {
           console.log(JSON.stringify({ ...node, message_type: "node", struct_type: "node" }));
         }
       }
+      return;
+    }
+    case "restore": {
+      const target = args[args.indexOf("--target") + 1];
+      const [id] = args.slice(args.indexOf("--") + 1);
+      // --include patterns of literal paths: drop the escapes
+      const includes = args.flatMap((a, i) => (args[i - 1] === "--include" ? [a.replace(/\\(.)/g, "$1")] : []));
+      const data = readSnapshots();
+      const snap = data.snapshots.find((s) => s.id.startsWith(id)) ?? fatal(1, `failed to find snapshot: no matching ID found for prefix "${id}"`);
+      const wanted = (data.nodes[snap.id] ?? []).filter(
+        (n) => includes.length === 0 || includes.some((p) => n.path === p || n.path.startsWith(`${p}/`)),
+      );
+      console.log(JSON.stringify({ message_type: "status", percent_done: 0.5 }));
+      let bytes = 0;
+      for (const n of wanted) {
+        const to = path.join(target, n.path);
+        if (n.type === "dir") {
+          fs.mkdirSync(to, { recursive: true });
+        } else {
+          fs.mkdirSync(path.dirname(to), { recursive: true });
+          fs.writeFileSync(to, n.path);
+          bytes += n.path.length;
+        }
+      }
+      console.log(JSON.stringify({ message_type: "summary", total_files: wanted.length, files_restored: wanted.length, bytes_restored: bytes }));
       return;
     }
     case "list": {

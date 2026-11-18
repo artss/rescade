@@ -31,7 +31,7 @@ interface RepoView {
   reason?: string;
   checkedAt?: number;
   locks?: RepoLockList;
-  lockedBy?: { runId: number; cascade: string };
+  lockedBy?: { runId: number; cascade?: string };
 }
 
 /** `GET /status`. */
@@ -60,13 +60,63 @@ export async function runRemote(client: ApiClient, cascade: string, detach: bool
   const cascades = await client.get<CascadeView[]>("/cascades");
   const total = cascades.find((c) => c.name === cascade)?.steps.length;
   const tag = (index: number) => (total === undefined ? `[${index + 1}]` : `[${index + 1}/${total}]`);
+  return follow(client, {
+    events: `?cascade=${encodeURIComponent(cascade)}`,
+    start: () => client.post<RunRecord>(`/cascades/${encodeURIComponent(cascade)}/run`),
+    tag,
+    json,
+    done: (last, took) => `cascade "${cascade}": ${last.status}${took}`,
+  });
+}
 
+/**
+ * Restores a snapshot (or some paths of it) into the daemon's restore directory and follows the run, unless `detach`.
+ * Ctrl+C works as in `run`.
+ */
+export async function restoreRemote(
+  client: ApiClient,
+  repo: string,
+  snapshot: string,
+  paths: string[],
+  detach: boolean,
+  json: boolean,
+): Promise<number> {
+  const start = () =>
+    client.post<RunRecord>(`/repos/${encodeURIComponent(repo)}/snapshots/${encodeURIComponent(snapshot)}/restore`, { paths });
+  if (detach) {
+    const run = await start();
+    if (json) print(run);
+    else console.log(`run ${run.id} started: restoring into ${run.restore?.target ?? "?"}`);
+    return 0;
+  }
+  // a restore run has no cascade to filter by; events of other runs are dropped by run id
+  return follow(client, {
+    events: "",
+    start,
+    tag: () => "[1/1]",
+    json,
+    done: (last, took) => `restore into ${last.restore?.target ?? "?"}: ${last.status}${took}`,
+  });
+}
+
+/** Subscribes to events, starts a run and prints its steps and log until it ends; returns the exit code. */
+async function follow(
+  client: ApiClient,
+  opts: {
+    events: string;
+    start: () => Promise<RunRecord>;
+    tag: (index: number) => string;
+    json: boolean;
+    done: (last: RunRecord, took: string) => string;
+  },
+): Promise<number> {
+  const { tag, json } = opts;
   // subscribe first: events of the run may come before the answer to the POST
   const ac = new AbortController();
-  const events = await client.events(`?cascade=${encodeURIComponent(cascade)}`, ac.signal);
+  const events = await client.events(opts.events, ac.signal);
   let run: RunRecord;
   try {
-    run = await client.post<RunRecord>(`/cascades/${encodeURIComponent(cascade)}/run`);
+    run = await opts.start();
   } catch (e) {
     ac.abort();
     throw e;
@@ -77,7 +127,7 @@ export async function runRemote(client: ApiClient, cascade: string, detach: bool
     else console.error(`run ${run.id} skipped: ${run.reason}`);
     return RUN_EXIT.skipped;
   }
-  if (!json) console.log(`run ${run.id} of "${cascade}" started`);
+  if (!json) console.log(`run ${run.id} ${runSubject(run)} started`);
 
   let cancelling = false;
   const onSignal = () => {
@@ -114,9 +164,16 @@ export async function runRemote(client: ApiClient, cascade: string, detach: bool
   last ??= await client.get<RunRecord>(`/runs/${run.id}`);
   if (!json) {
     const took = last.finishedAt === undefined ? "" : ` in ${formatDuration(last.finishedAt - last.startedAt)}`;
-    console.log(`cascade "${cascade}": ${last.status}${took}${last.reason === undefined ? "" : ` (${last.reason})`}`);
+    console.log(`${opts.done(last, took)}${last.reason === undefined ? "" : ` (${last.reason})`}`);
   }
   return exitCode(last.status);
+}
+
+/** `of "daily"` for a cascade run, `(restore of c8b33f97 from "local" into /restore/c8b33f97)` for a restore. */
+function runSubject(run: RunRecord): string {
+  const r = run.restore;
+  if (r) return `(restore of ${r.snapshot.slice(0, 8)} from "${r.repo}" into ${r.target})`;
+  return `of "${run.cascade ?? ""}"`;
 }
 
 function belongsTo(e: ServerEvent, runId: number): boolean {
@@ -180,7 +237,7 @@ export async function listRuns(
   const rows = [["ID", "CASCADE", "TRIGGER", "STATUS", "STARTED", "TOOK", "REASON"]];
   for (const r of runs) {
     const took = r.finishedAt === undefined ? "-" : formatDuration(r.finishedAt - r.startedAt);
-    rows.push([String(r.id), r.cascade, r.trigger, r.status, formatTime(r.startedAt), took, r.reason ?? ""]);
+    rows.push([String(r.id), r.cascade ?? "restore", r.trigger, r.status, formatTime(r.startedAt), took, r.reason ?? ""]);
   }
   console.log(table(rows));
   return 0;
@@ -193,7 +250,7 @@ export async function showRun(client: ApiClient, id: string, json: boolean): Pro
     return 0;
   }
   const took = run.finishedAt === undefined ? "" : ` in ${formatDuration(run.finishedAt - run.startedAt)}`;
-  console.log(`run ${run.id} of "${run.cascade}" (${run.trigger}), started ${formatTime(run.startedAt)}: ${run.status}${took}`);
+  console.log(`run ${run.id} ${runSubject(run)} (${run.trigger}), started ${formatTime(run.startedAt)}: ${run.status}${took}`);
   if (run.reason !== undefined) console.log(`  ${run.reason}`);
   for (const s of run.steps) {
     const tag = `[${s.index + 1}]`;
@@ -234,7 +291,7 @@ export async function listRepos(client: ApiClient, json: boolean): Promise<numbe
   }
   const rows = [["REPO", "STATE", "CHECKED", "LOCKED BY", "RESTIC LOCKS", "LOCATION"]];
   for (const r of repos) {
-    const locked = r.lockedBy ? `run ${r.lockedBy.runId} (${r.lockedBy.cascade})` : "-";
+    const locked = r.lockedBy ? `run ${r.lockedBy.runId} (${r.lockedBy.cascade ?? "restore"})` : "-";
     rows.push([r.name, r.state, r.checkedAt === undefined ? "-" : formatTime(r.checkedAt), locked, lockCount(r.locks), r.location]);
   }
   console.log(table(rows));

@@ -1,3 +1,5 @@
+import { stat } from "node:fs/promises";
+import path from "node:path";
 import { parseArgs } from "node:util";
 import { parseDuration, readTokenFile } from "@rescade/core";
 
@@ -13,6 +15,8 @@ export interface Settings {
   configDir: string;
   dataDir: string;
   restic: string;
+  /** Absolute; snapshots are restored into `<restoreDir>/<short id>`. Undefined = restore is off. */
+  restoreDir?: string;
   repoCheckTimeoutMs?: number;
   /** Finished runs older than this are deleted; undefined keeps them forever. */
   historyRetentionMs?: number;
@@ -30,13 +34,15 @@ export const USAGE = `rescaded - the rescade daemon
 
 Usage:
   rescaded [--addr <host:port>] [--config-dir <path>] [--data-dir <path>] [--restic <path>]
-           [--token-file <path>] [--log-level <level>]
+           [--restore-dir <path>] [--token-file <path>] [--log-level <level>]
 
 Options (and the environment variables they override):
   --addr <host:port>    where the API listens (RESCADE_ADDR, default ${DEFAULT_ADDR})
   --config-dir <path>   directory with *.yaml files, or a single file (RESCADE_CONFIG_DIR, default ./config)
   --data-dir <path>     run history (RESCADE_DATA_DIR, default ${DEFAULT_DATA_DIR})
   --restic <path>       restic binary (RESCADE_RESTIC, default restic)
+  --restore-dir <path>  an existing directory to restore snapshots into, as <path>/<short id>
+                        (RESCADE_RESTORE_DIR; unset = restore is off)
   --token-file <path>   API token (RESCADE_TOKEN_FILE, default ${DEFAULT_TOKEN_FILE});
                         RESCADE_TOKEN gives the token itself
   --log-level <level>   trace, debug, info, warn, error (RESCADE_LOG_LEVEL, default info)
@@ -74,6 +80,7 @@ export async function readSettings(
         "config-dir": { type: "string" },
         "data-dir": { type: "string" },
         restic: { type: "string" },
+        "restore-dir": { type: "string" },
         "token-file": { type: "string" },
         "log-level": { type: "string" },
         help: { type: "boolean", short: "h", default: false },
@@ -111,6 +118,7 @@ export async function readSettings(
     configDir: pick(values["config-dir"], "RESCADE_CONFIG_DIR", "config"),
     dataDir: pick(values["data-dir"], "RESCADE_DATA_DIR", DEFAULT_DATA_DIR),
     restic: pick(values.restic, "RESCADE_RESTIC", "restic"),
+    ...(await restoreDir(values["restore-dir"] ?? (env.RESCADE_RESTORE_DIR || undefined))),
     repoCheckTimeoutMs: durationVar("RESCADE_REPO_CHECK_TIMEOUT"),
     historyRetentionMs: durationVar("RESCADE_HISTORY_RETENTION", DEFAULT_HISTORY_RETENTION),
     logRetentionMs: durationVar("RESCADE_LOG_RETENTION", DEFAULT_LOG_RETENTION),
@@ -119,6 +127,16 @@ export async function readSettings(
     corsOrigins: new Set(list(env.RESCADE_CORS_ORIGINS)),
     logLevel,
   };
+}
+
+/** The restore directory must exist: a typo should not restore into a new directory nobody looks at. */
+async function restoreDir(dir: string | undefined): Promise<{ restoreDir?: string }> {
+  if (dir === undefined) return {};
+  const full = path.resolve(dir);
+  const info = await stat(full).catch(() => undefined);
+  if (!info) throw new SettingsError(`restore directory ${full} does not exist`);
+  if (!info.isDirectory()) throw new SettingsError(`restore directory ${full} is not a directory`);
+  return { restoreDir: full };
 }
 
 /** "127.0.0.1:8765", "[::1]:8765", "localhost:8765". */

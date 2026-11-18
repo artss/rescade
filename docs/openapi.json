@@ -24,6 +24,36 @@
           "error"
         ]
       },
+      "Restore": {
+        "type": "object",
+        "description": "A restore run: what is restored and where to",
+        "properties": {
+          "repo": {
+            "type": "string"
+          },
+          "snapshot": {
+            "type": "string",
+            "description": "The snapshot id as given"
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Empty: the whole snapshot"
+          },
+          "target": {
+            "type": "string",
+            "description": "`<restore dir>/<short id>`; the snapshot's paths are kept below it"
+          }
+        },
+        "required": [
+          "repo",
+          "snapshot",
+          "paths",
+          "target"
+        ]
+      },
       "Run": {
         "type": "object",
         "properties": {
@@ -31,7 +61,11 @@
             "type": "integer"
           },
           "cascade": {
-            "type": "string"
+            "type": "string",
+            "description": "Absent for a restore"
+          },
+          "restore": {
+            "$ref": "#/components/schemas/Restore"
           },
           "trigger": {
             "type": "string",
@@ -69,7 +103,6 @@
         },
         "required": [
           "id",
-          "cascade",
           "trigger",
           "status",
           "startedAt"
@@ -92,7 +125,8 @@
               "prune",
               "check",
               "copy",
-              "run"
+              "run",
+              "restore"
             ]
           },
           "label": {
@@ -134,11 +168,11 @@
           "summary": {
             "type": "object",
             "additionalProperties": true,
-            "description": "backup: restic's JSON summary"
+            "description": "backup, restore: restic's JSON summary"
           },
           "repo": {
             "type": "string",
-            "description": "backup: the repo the snapshot (`summary.snapshot_id`) goes to"
+            "description": "backup: the repo the snapshot (`summary.snapshot_id`) goes to; restore: the repo it comes from"
           }
         },
         "required": [
@@ -156,7 +190,11 @@
             "type": "integer"
           },
           "cascade": {
-            "type": "string"
+            "type": "string",
+            "description": "Absent for a restore"
+          },
+          "restore": {
+            "$ref": "#/components/schemas/Restore"
           },
           "trigger": {
             "type": "string",
@@ -200,7 +238,6 @@
         },
         "required": [
           "id",
-          "cascade",
           "trigger",
           "status",
           "startedAt",
@@ -513,12 +550,12 @@
             "type": "integer"
           },
           "cascade": {
-            "type": "string"
+            "type": "string",
+            "description": "Absent for a restore"
           }
         },
         "required": [
-          "runId",
-          "cascade"
+          "runId"
         ]
       },
       "ResticLock": {
@@ -1856,6 +1893,126 @@
           },
           "504": {
             "description": "The repo did not answer in time",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/repos/{name}/snapshots/{id}/restore": {
+      "post": {
+        "summary": "Restore a snapshot, or some of its paths",
+        "description": "Starts a run that restores into `<restore dir>/<short id>` of the daemon (`--restore-dir`), keeping the snapshot's full paths below it; files already there are overwritten, nothing is deleted. The run waits for the repo's mutex, so backup and prune of the repo wait for it. Follow it as any run.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "paths": {
+                    "type": "array",
+                    "maxItems": 1000,
+                    "items": {
+                      "type": "string",
+                      "pattern": "^/[^\\u0000]*$"
+                    },
+                    "description": "Absolute paths in the snapshot, directories with everything below; absent or empty = all"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "name",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8,64}$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "Snapshot id, full or at least 8 characters"
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "The new run",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Run"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Host not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such repo",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Restore is not enabled on the daemon",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The daemon is stopping",
             "content": {
               "application/json": {
                 "schema": {

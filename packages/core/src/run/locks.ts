@@ -3,8 +3,11 @@ import { formatDuration } from "../config/schema.js";
 /** Who holds or waits for a repo mutex; used in "busy" reasons. */
 export interface LockOwner {
   runId: number;
-  cascade: string;
+  /** Absent for a restore. */
+  cascade?: string;
 }
+
+const describeOwner = (o: LockOwner) => `run ${o.runId} (${o.cascade === undefined ? "restore" : `cascade "${o.cascade}"`})`;
 
 export type LockResult =
   | { ok: true; release: () => void }
@@ -112,11 +115,11 @@ export class RepoLocks {
   private busyReason(repos: string[]): string {
     for (const r of repos) {
       const owner = this.held.get(r);
-      if (owner) return `repo "${r}" is busy: held by run ${owner.runId} (cascade "${owner.cascade}")`;
+      if (owner) return `repo "${r}" is busy: held by ${describeOwner(owner)}`;
     }
     for (const r of repos) {
       const waiter = this.queue.find((w) => w.repos.includes(r));
-      if (waiter) return `repo "${r}" is busy: run ${waiter.owner.runId} (cascade "${waiter.owner.cascade}") is waiting for it`;
+      if (waiter) return `repo "${r}" is busy: ${describeOwner(waiter.owner)} is waiting for it`;
     }
     return "repos are busy";
   }

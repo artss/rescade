@@ -268,13 +268,32 @@ describe("store", () => {
     const { DatabaseSync } = await import("node:sqlite");
     (await Store.open(file)).close();
     const raw = new DatabaseSync(file);
-    raw.exec("ALTER TABLE steps DROP COLUMN repo; PRAGMA user_version = 1;");
+    raw.exec("ALTER TABLE steps DROP COLUMN repo; ALTER TABLE runs DROP COLUMN restore; PRAGMA user_version = 1;");
     raw.close();
 
     const upgraded = await Store.open(file);
     const run = upgraded.insertRun({ cascade: "daily", trigger: "schedule", status: "running", startedAt: 5 });
     upgraded.saveStep({ runId: run.id, index: 0, type: "backup", label: "backup s -> a", repo: "a", status: "running" });
     expect(upgraded.run(run.id)?.steps[0]?.repo).toBe("a");
+    upgraded.close();
+  });
+
+  it("upgrades a database of schema version 2 and keeps its runs", async () => {
+    const file = path.join(fake.dir, "v2.db");
+    const { DatabaseSync } = await import("node:sqlite");
+    const old = await Store.open(file);
+    const before = old.insertRun({ cascade: "daily", trigger: "schedule", status: "success", startedAt: 5, finishedAt: 6 });
+    old.close();
+    const raw = new DatabaseSync(file);
+    raw.exec("ALTER TABLE runs DROP COLUMN restore; PRAGMA user_version = 2;");
+    raw.close();
+
+    const upgraded = await Store.open(file);
+    expect(upgraded.run(before.id)).toEqual({ ...before, steps: [] });
+    const restore = { repo: "a", snapshot: "c8b33f97", paths: ["/etc"], target: "/restore/c8b33f97" };
+    const run = upgraded.insertRun({ restore, trigger: "manual", status: "running", startedAt: 7 });
+    expect(upgraded.run(run.id)).toEqual({ id: run.id, restore, trigger: "manual", status: "running", startedAt: 7, steps: [] });
+    expect(upgraded.runs().map((r) => r.cascade)).toEqual([undefined, "daily"]);
     upgraded.close();
   });
 });

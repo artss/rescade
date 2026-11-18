@@ -30,14 +30,15 @@ progress end as `interrupted`. Logs are JSON lines on stdout.
 
 Settings come from flags or the environment, never from the YAML: `--addr` / `RESCADE_ADDR`,
 `--config-dir` / `RESCADE_CONFIG_DIR`, `--data-dir` / `RESCADE_DATA_DIR`, `--restic` / `RESCADE_RESTIC`,
-`--token-file` / `RESCADE_TOKEN_FILE` (or the token itself in `RESCADE_TOKEN`), `--log-level` /
+`--restore-dir` / `RESCADE_RESTORE_DIR` (an existing directory to restore into; unset = restore is off), `--token-file` / `RESCADE_TOKEN_FILE` (or the token itself in `RESCADE_TOKEN`), `--log-level` /
 `RESCADE_LOG_LEVEL`, `RESCADE_REPO_CHECK_TIMEOUT` (default `2m`), `RESCADE_ALLOWED_HOSTS` (Host header
 values to accept: `host:port` on that port, `host` on any; unset = any host), `RESCADE_CORS_ORIGINS`. See `rescaded --help`.
 
 The API lives under `/api` and needs `Authorization: Bearer <token>` on every request:
 `GET /api/status`, `GET /api/cascades`, `GET /api/runs?cascade=&limit=&before=`, `GET /api/runs/:id`,
 `GET /api/runs/:id/log?step=&after=`, `POST /api/cascades/:name/run`, `POST /api/runs/:id/cancel`,
-`GET /api/repos`, `GET /api/summary` (flat counts for dashboards), `GET /api/events?run=|cascade=` (server-sent events). The OpenAPI document is at
+`GET /api/repos`, `GET /api/repos/:name/snapshots`, `GET /api/repos/:name/snapshots/:id/ls?path=`,
+`POST /api/repos/:name/snapshots/:id/restore` (body `{ "paths": [...] }`, optional), `GET /api/summary` (flat counts for dashboards), `GET /api/events?run=|cascade=` (server-sent events). The OpenAPI document is at
 `/api/openapi.json`, Swagger UI at `/api/docs` and the health check at `/api/health`, all without the token.
 
 ## Homepage widget
@@ -111,7 +112,9 @@ mounted read-only, history and restic's cache in a volume.
   Do not use `RESTIC_HOST` for this: restic also takes it as the default `--host` filter of `forget`, `copy` and `check`.
 - Mount the backup sources read-only at paths that do not collide with the image's own (`/etc`, `/usr`,
   `/var/lib/rescade`, ...) and do not change later. A `/host` prefix is a safe choice (`/home:/host/home:ro`, then
-  `/host/home` in `sets`); restore with `restic restore <id>:/host/home --target /home`.
+  `/host/home` in `sets`). `rescade restore` keeps the prefix: files land in
+  `<restore dir>/<short id>/host/home/...`; to put them back in place, `restic restore <id>:/host/home --target /home`.
+- For `rescade restore`, mount a writable directory and point `RESCADE_RESTORE_DIR` at it.
 - The daemon runs as root so that restic can read any source file.
 - Docker Desktop on macOS cannot back up bind-mounted host directories: restic sets `O_NOATIME` on each file it
   reads, and Docker Desktop's file sharing then fails every read with `input/output error`. Named volumes work
@@ -128,6 +131,9 @@ mounted read-only, history and restic's cache in a volume.
     rescade log <run> [--step <n>]
     rescade cancel <run>
     rescade repos
+    rescade snapshots <repo>
+    rescade ls <repo> <snapshot> [path]
+    rescade restore <repo> <snapshot> [path...] [--detach]   # into <restore dir>/<short id>/<full path>
 
 All of them take `--json`, `--url` (default `$RESCADE_URL`, then `http://127.0.0.1:8765`) and
 `--token-file` (default `$RESCADE_TOKEN`, `$RESCADE_TOKEN_FILE`, then `~/.config/rescade/token`).
@@ -137,6 +143,7 @@ Exit codes:
 - `validate`: 0 valid, 1 errors in the config, 2 bad usage.
 - `run`: 0 success, 3 warning, 1 failed, interrupted or config errors, 130 cancelled,
   75 skipped (repos busy or the cascade already running), 2 bad usage.
+- `restore`: 0 success, 1 failed or interrupted, 130 cancelled, 2 bad usage.
 - the others: 0 done, 1 error from the daemon or no connection, 2 bad usage.
 
 ## Config

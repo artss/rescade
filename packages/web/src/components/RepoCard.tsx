@@ -54,7 +54,7 @@ export function RepoCard({ repo: r, detailed = false }: { repo: RepoView; detail
         <dd>
           {r.lockedBy ? (
             <>
-              <RunLink id={r.lockedBy.runId} /> ({r.lockedBy.cascade})
+              <RunLink id={r.lockedBy.runId} /> ({r.lockedBy.cascade ?? "restore"})
             </>
           ) : (
             <span className="text-zinc-400">-</span>

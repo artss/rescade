@@ -8,6 +8,7 @@ import {
   listDir,
   listSnapshots,
   MAX_DIR_ENTRIES,
+  MAX_RESTORE_PATHS,
   SNAPSHOT_ID,
   type BrowseProblem,
   type BrowseResult,
@@ -495,6 +496,65 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     async (request, reply) => {
       const { name, id: snapshot } = request.params;
       return browse(request, reply, name, (ctx) => listDir(ctx, name, snapshot, request.query.path));
+    },
+  );
+
+  app.post<{ Params: { name: string; id: string }; Body: { paths?: string[] } | undefined }>(
+    `${API_PREFIX}/repos/:name/snapshots/:id/restore`,
+    {
+      schema: {
+        summary: "Restore a snapshot, or some of its paths",
+        description:
+          "Starts a run that restores into `<restore dir>/<short id>` of the daemon (`--restore-dir`), keeping the " +
+          "snapshot's full paths below it; files already there are overwritten, nothing is deleted. The run waits for " +
+          "the repo's mutex, so backup and prune of the repo wait for it. Follow it as any run.",
+        params: {
+          type: "object",
+          properties: {
+            name: { type: "string" },
+            id: { type: "string", pattern: SNAPSHOT_ID.source, description: "Snapshot id, full or at least 8 characters" },
+          },
+          required: ["name", "id"],
+        },
+        body: {
+          type: "object",
+          properties: {
+            paths: {
+              type: "array",
+              maxItems: MAX_RESTORE_PATHS,
+              items: { type: "string", pattern: "^/[^\\u0000]*$" },
+              description: "Absolute paths in the snapshot, directories with everything below; absent or empty = all",
+            },
+          },
+          additionalProperties: false,
+        },
+        response: responses(
+          202,
+          "The new run",
+          ref("Run"),
+          400,
+          [404, "No such repo"],
+          [409, "Restore is not enabled on the daemon"],
+          503,
+        ),
+      },
+      // a POST without a body restores the whole snapshot; validation needs an object
+      preValidation: async (request) => {
+        request.body ??= {};
+      },
+    },
+    async (request, reply) => {
+      const { name, id: snapshot } = request.params;
+      if (!deps.config().repos[name]) return reply.code(404).send({ error: `unknown repo "${name}"` });
+      if (deps.runner.restoreDir === undefined) {
+        return reply
+          .code(409)
+          .send({ error: "restore is not enabled: start rescaded with --restore-dir or RESCADE_RESTORE_DIR" });
+      }
+      if (deps.runner.isStopping) return reply.code(503).send({ error: "the daemon is stopping" });
+      const run = deps.runner.restore({ repo: name, snapshot, paths: request.body?.paths ?? [] });
+      request.log.info({ run: run.id, repo: name, snapshot, target: run.restore?.target }, "restore requested");
+      return reply.code(202).send(run);
     },
   );
 

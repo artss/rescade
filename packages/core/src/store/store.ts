@@ -1,6 +1,5 @@
 import { DatabaseSync, type SQLInputValue, type SQLOutputValue, type StatementSync } from "node:sqlite";
-import type { Step } from "../config/types.js";
-import type { LogStream, RunStatus, StepStatus } from "../run/cascade.js";
+import type { LogStream, RunStatus, StepStatus, StepType } from "../run/cascade.js";
 
 export type Trigger = "schedule" | "manual";
 
@@ -8,9 +7,20 @@ export type Trigger = "schedule" | "manual";
 export type RunState = "queued" | "running" | RunStatus | "interrupted";
 export type StepState = "queued" | "running" | StepStatus | "interrupted";
 
+/** A restore run: what was restored, and where to. */
+export interface RestoreRecord {
+  repo: string;
+  snapshot: string;
+  /** Empty: the whole snapshot. */
+  paths: string[];
+  target: string;
+}
+
+/** A run of a cascade (`cascade`) or a restore (`restore`). */
 export interface RunRecord {
   id: number;
-  cascade: string;
+  cascade?: string;
+  restore?: RestoreRecord;
   trigger: Trigger;
   status: RunState;
   reason?: string;
@@ -22,9 +32,9 @@ export interface RunRecord {
 export interface StepRecord {
   runId: number;
   index: number;
-  type: Step["type"];
+  type: StepType;
   label: string;
-  /** backup: the repo the snapshot goes to. */
+  /** backup: the repo the snapshot goes to; restore: the repo it comes from. */
   repo?: string;
   status: StepState;
   exitCode?: number;
@@ -72,9 +82,10 @@ export interface PruneResult {
   logLines: number;
 }
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
-// the log lives in its own table, without a foreign key, so it can be rotated apart from run metadata
+// the log lives in its own table, without a foreign key, so it can be rotated apart from run metadata;
+// a restore run has an empty cascade and its request in `restore` (JSON)
 const SCHEMA = `
 CREATE TABLE runs (
   id INTEGER PRIMARY KEY,
@@ -83,7 +94,8 @@ CREATE TABLE runs (
   status TEXT NOT NULL,
   reason TEXT,
   started_at INTEGER NOT NULL,
-  finished_at INTEGER
+  finished_at INTEGER,
+  restore TEXT
 );
 CREATE INDEX runs_by_cascade ON runs (cascade, id);
 CREATE TABLE steps (
@@ -115,6 +127,7 @@ CREATE INDEX log_by_run ON log (run_id, step, seq);
 /** Upgrades from each older schema version to the next one. */
 const MIGRATIONS: Record<number, string> = {
   1: "ALTER TABLE steps ADD COLUMN repo TEXT;",
+  2: "ALTER TABLE runs ADD COLUMN restore TEXT;",
 };
 
 /** Run history in SQLite: runs, their steps, and step logs. */
@@ -127,7 +140,7 @@ export class Store {
   private constructor(private readonly db: DatabaseSync) {
     this.stmts = {
       insertRun: db.prepare(
-        "INSERT INTO runs (cascade, trigger, status, reason, started_at, finished_at) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO runs (cascade, trigger, status, reason, started_at, finished_at, restore) VALUES (?, ?, ?, ?, ?, ?, ?)",
       ),
       updateRun: db.prepare("UPDATE runs SET status = ?, reason = ?, finished_at = ? WHERE id = ?"),
       saveStep: db.prepare(
@@ -182,7 +195,7 @@ export class Store {
 
   /**
    * Deletes old history. Runs in progress are never touched, nor the latest run of each cascade
-   * (a cascade that runs once a month still shows its last run).
+   * (a cascade that runs once a month still shows its last run), nor the latest restore.
    */
   prune(opts: PruneOptions): PruneResult {
     const old = `SELECT id FROM runs WHERE finished_at IS NOT NULL AND finished_at < ?
@@ -209,12 +222,13 @@ export class Store {
 
   insertRun(run: Omit<RunRecord, "id">): RunRecord {
     const r = this.stmts.insertRun.run(
-      run.cascade,
+      run.cascade ?? "",
       run.trigger,
       run.status,
       run.reason ?? null,
       run.startedAt,
       run.finishedAt ?? null,
+      run.restore === undefined ? null : JSON.stringify(run.restore),
     );
     return { id: Number(r.lastInsertRowid), ...run };
   }
@@ -306,9 +320,10 @@ const str = (v: SQLOutputValue | undefined) => (v === null || v === undefined ? 
 function toRun(r: Row): RunRecord {
   const reason = str(r.reason);
   const finishedAt = num(r.finished_at);
+  const restore = str(r.restore);
   return {
     id: Number(r.id),
-    cascade: String(r.cascade),
+    ...(restore === undefined ? { cascade: String(r.cascade) } : { restore: JSON.parse(restore) as RestoreRecord }),
     trigger: r.trigger as Trigger,
     status: r.status as RunState,
     ...(reason === undefined ? {} : { reason }),
@@ -321,7 +336,7 @@ function toStep(r: Row): StepRecord {
   const s: StepRecord = {
     runId: Number(r.run_id),
     index: Number(r.idx),
-    type: r.type as Step["type"],
+    type: r.type as StepType,
     label: String(r.label),
     status: r.status as StepState,
   };
