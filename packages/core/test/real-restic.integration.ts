@@ -126,7 +126,7 @@ describe("with real restic", () => {
     const top = await listDir(ctx, "c", id.slice(0, 8), src);
     if (!top.ok) throw new Error(top.reason);
     expect(top.value.entries.map((e) => [e.name, e.type]).sort()).toEqual([["a.txt", "file"], ["sub", "dir"]]);
-    expect(top.value.entries.find((e) => e.name === "a.txt")).toMatchObject({ size: 6, permissions: expect.stringMatching(/^-rw/) });
+    expect(top.value.entries.find((e) => e.name === "a.txt")).toMatchObject({ size: 6, permissions: expect.stringMatching(/^-rw/), uid: process.getuid?.(), gid: process.getgid?.() });
     const sub = await listDir(ctx, "c", id, `${src}/sub/`);
     expect(sub.ok && sub.value.entries.map((e) => e.path)).toEqual([path.join(src, "sub", "b.txt")]);
     const root = await listDir(ctx, "c", id, "/");

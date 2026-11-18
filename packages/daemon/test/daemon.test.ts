@@ -172,6 +172,15 @@ describe("startup", () => {
     expect((await api("GET", "/", { authorization: "" })).status).toBe(404);
   });
 
+  it("shows the restore directory in its status only when restore is on", async () => {
+    await start(undefined, {}, { restoreDir: "/srv/restore" });
+    expect((await api("GET", "/api/status")).body).toMatchObject({ restoreDir: "/srv/restore" });
+    await daemon!.stop();
+
+    await start();
+    expect((await api("GET", "/api/status")).body).not.toHaveProperty("restoreDir");
+  });
+
   it("deletes old history at start", async () => {
     const dataDir = path.join(fake.dir, "data");
     const { mkdir } = await import("node:fs/promises");

@@ -230,6 +230,12 @@ importers:
 
   packages/web:
     devDependencies:
+      '@headless-tree/core':
+        specifier: 1.8.0
+        version: 1.8.0
+      '@headless-tree/react':
+        specifier: 1.8.0
+        version: 1.8.0(@headless-tree/core@1.8.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@rescade/core':
         specifier: workspace:*
         version: link:../core
@@ -490,6 +496,16 @@ packages:
 
   '@fastify/swagger@9.9.4':
     resolution: {integrity: sha512-kOqd32l4eYuDSfPQs0uppTj+gqdOrfPs5kNljQy3ZL2S7EVn41GvyAYA9wXxY8rS+/88HHR8YjYhGOpvtqrPCw==}
+
+  '@headless-tree/core@1.8.0':
+    resolution: {integrity: sha512-mTTTzA94KzIYbJ2605IIcAZiJ075qe4FiPHop72KKC/XXe7gv7CBGY/WIB7k8CmlDnJEZulp8nm6pmGXLenu5A==}
+
+  '@headless-tree/react@1.8.0':
+    resolution: {integrity: sha512-T0IOukZUzRVwCCNzeDr5YxS+5eTjGLCBCItq00qUWDrSzOqawYZwyIZVSNhCdRfea47R1qDHkvca+8hxZ8mvYQ==}
+    peerDependencies:
+      '@headless-tree/core': '*'
+      react: '*'
+      react-dom: '*'
 
   '@isaacs/nonrecursive-glob-match@1.1.0':
     resolution: {integrity: sha512-GPm/Dbvk5RLmhRnxXIa7nTpK0xtl4E0wj0MslsuNiJ1FIROU+2+9lgUC/dgF7Ey4QCWhfEsgxilMRMCdHPfDfw==}
@@ -1711,6 +1727,14 @@ snapshots:
       yaml: 2.9.1
     transitivePeerDependencies:
       - supports-color
+
+  '@headless-tree/core@1.8.0': {}
+
+  '@headless-tree/react@1.8.0(@headless-tree/core@1.8.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+    dependencies:
+      '@headless-tree/core': 1.8.0
+      react: 19.3.1
+      react-dom: 19.3.1(react@19.3.1)
 
   '@isaacs/nonrecursive-glob-match@1.1.0': {}
 

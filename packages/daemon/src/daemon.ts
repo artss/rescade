@@ -64,7 +64,12 @@ export async function startDaemon(settings: Settings, logger: Logger, options: D
   const loaded = await readConfig(settings.configDir, logger);
   if (!loaded.config) throw new StartupError("the config has errors");
   let config = loaded.config;
-  const status: DaemonStatus = { version: VERSION, startedAt, config: { path: settings.configDir, loadedAt: startedAt } };
+  const status: DaemonStatus = {
+    version: VERSION,
+    startedAt,
+    config: { path: settings.configDir, loadedAt: startedAt },
+    ...(settings.restoreDir === undefined ? {} : { restoreDir: settings.restoreDir }),
+  };
 
   await mkdir(settings.dataDir, { recursive: true, mode: 0o700 });
   const store = await Store.open(path.join(settings.dataDir, "rescade.db"));

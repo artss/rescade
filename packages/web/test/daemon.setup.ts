@@ -61,6 +61,7 @@ cascades:
       extraHosts: [],
       corsOrigins: new Set(),
       logLevel: "silent",
+      restoreDir: path.join(fake.dir, "restore"),
     },
     pino({ level: "silent" }),
     { env: fake.env(), killGraceMs: 500, heartbeatMs: 1000, webDir: null },

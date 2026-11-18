@@ -352,6 +352,7 @@ export async function listDir(client: ApiClient, repo: string, snapshot: string,
   const entries = [...result.entries].sort((a, b) => Number(b.type === "dir") - Number(a.type === "dir") || a.name.localeCompare(b.name));
   const rows = entries.map((e) => [
     e.permissions ?? "-",
+    e.uid === undefined ? "-" : `${e.uid}:${e.gid ?? "-"}`,
     e.size === undefined ? "" : formatBytes(e.size),
     e.mtime === undefined ? "" : formatTime(e.mtime),
     e.type === "dir" ? `${e.name}/` : e.name,

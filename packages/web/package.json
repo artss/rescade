@@ -14,6 +14,8 @@
     "dev": "vite"
   },
   "devDependencies": {
+    "@headless-tree/core": "1.8.0",
+    "@headless-tree/react": "1.8.0",
     "@rescade/core": "workspace:*",
     "@tailwindcss/vite": "^4.3.5",
     "@tanstack/react-query": "^5.107.1",

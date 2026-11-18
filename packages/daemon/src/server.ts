@@ -35,6 +35,8 @@ export interface DaemonStatus {
     loadedAt: number;
     lastReload?: { at: number; ok: boolean; errors: string[] };
   };
+  /** Where snapshots are restored; absent = restore is off. */
+  restoreDir?: string;
 }
 
 export interface ServerDeps {

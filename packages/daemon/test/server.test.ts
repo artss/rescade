@@ -56,12 +56,13 @@ const snapshot = {
   id: SNAP,
   short_id: SNAP.slice(0, 8),
 };
-const node = { name: "f", type: "file", path: "/home/f", size: 3, permissions: "-rw-r--r--", mtime: "2026-11-01T10:00:00Z" };
+const node = { name: "f", type: "file", path: "/home/f", size: 3, permissions: "-rw-r--r--", mtime: "2026-11-01T10:00:00Z", uid: 0, gid: 0 };
 const log: LogRecord = { id: 3, step: 0, ts: 1500, stream: "stderr", line: "Fatal: oops" };
 const status: DaemonStatus = {
   version: "1.2.3",
   startedAt: 500,
   config: { path: "/etc/rescade/config", loadedAt: 600, lastReload: { at: 700, ok: false, errors: ["a.yaml:1:1: error: x"] } },
+  restoreDir: "/restore",
 };
 
 let dir: string;

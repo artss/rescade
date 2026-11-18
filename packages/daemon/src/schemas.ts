@@ -281,6 +281,10 @@ const Status = {
       },
       required: ["path", "loadedAt"],
     },
+    restoreDir: {
+      type: "string",
+      description: "Where snapshots are restored (`<restoreDir>/<short id>`); absent = restore is off",
+    },
   },
   required: ["version", "startedAt", "config"],
 } as const;
@@ -347,6 +351,8 @@ const SnapshotEntry = {
     size: { type: "integer" },
     mtime: epochMs,
     permissions: { type: "string", description: "e.g. `drwxr-xr-x`" },
+    uid: { type: "integer", description: "Numeric owner as stored in the snapshot" },
+    gid: { type: "integer", description: "Numeric group as stored in the snapshot" },
   },
   required: ["name", "type", "path"],
 } as const;
