@@ -64,6 +64,8 @@ export interface RunQuery {
   limit?: number;
   /** Only runs with a smaller id, for paging. */
   beforeId?: number;
+  /** Runs to skip, for numbered pages. */
+  offset?: number;
 }
 
 export interface LogQuery {
@@ -278,22 +280,17 @@ export class Store {
   }
 
   runs(query: RunQuery = {}): RunRecord[] {
-    const where: string[] = [];
-    const params: SQLInputValue[] = [];
-    if (query.cascade !== undefined) {
-      where.push("cascade = ?");
-      params.push(query.cascade);
-    }
-    if (query.beforeId !== undefined) {
-      where.push("id < ?");
-      params.push(query.beforeId);
-    }
-    const sql =
-      "SELECT * FROM runs" + (where.length > 0 ? ` WHERE ${where.join(" AND ")}` : "") + " ORDER BY id DESC LIMIT ?";
+    const { where, params } = runFilter(query);
     return this.db
-      .prepare(sql)
-      .all(...params, query.limit ?? 50)
+      .prepare(`SELECT * FROM runs${where} ORDER BY id DESC LIMIT ? OFFSET ?`)
+      .all(...params, query.limit ?? 50, query.offset ?? 0)
       .map(toRun);
+  }
+
+  /** How many runs match, ignoring `limit` and `offset`. */
+  countRuns(query: Pick<RunQuery, "cascade" | "beforeId"> = {}): number {
+    const { where, params } = runFilter(query);
+    return Number(this.db.prepare(`SELECT COUNT(*) AS n FROM runs${where}`).get(...params)?.n ?? 0);
   }
 
   /** Log lines of a run in order, or of one of its steps. */
@@ -369,4 +366,18 @@ function toStep(r: Row): StepRecord {
   if (tail !== undefined) s.stderrTail = JSON.parse(tail) as string[];
   if (summary !== undefined) s.summary = JSON.parse(summary) as Record<string, unknown>;
   return s;
+}
+
+function runFilter(query: RunQuery): { where: string; params: SQLInputValue[] } {
+  const where: string[] = [];
+  const params: SQLInputValue[] = [];
+  if (query.cascade !== undefined) {
+    where.push("cascade = ?");
+    params.push(query.cascade);
+  }
+  if (query.beforeId !== undefined) {
+    where.push("id < ?");
+    params.push(query.beforeId);
+  }
+  return { where: where.length > 0 ? ` WHERE ${where.join(" AND ")}` : "", params };
 }

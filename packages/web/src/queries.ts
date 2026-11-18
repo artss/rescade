@@ -1,6 +1,7 @@
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
-import { request } from "./api.js";
+import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { request, send } from "./api.js";
 import { mergeLog, type LogData } from "./log.js";
+import { RUNS_PAGE } from "./paging.js";
 import type {
   CascadeView,
   DaemonStatus,
@@ -17,7 +18,7 @@ import type {
 export const keys = {
   status: ["status"] as const,
   cascades: ["cascades"] as const,
-  runs: (cascade?: string) => ["runs", cascade ?? null] as const,
+  runs: (cascade: string | undefined, page: number) => ["runs", cascade ?? null, page] as const,
   allRuns: ["runs"] as const,
   run: (id: number) => ["run", id] as const,
   log: (id: number) => ["log", id] as const,
@@ -26,8 +27,6 @@ export const keys = {
   allSnapshots: ["snapshots"] as const,
   snapshotDir: (repo: string, id: string, path: string) => ["snapshot-dir", repo, id, path] as const,
 };
-
-const PAGE = 50;
 
 export const isActive = (status: RunRecord["status"]) => status === "running" || status === "queued";
 
@@ -98,18 +97,17 @@ export const useRestore = (repo: string, id: string) =>
 export const useRun = (id: number) =>
   useQuery({ queryKey: keys.run(id), queryFn: () => request<RunWithSteps>("GET", `/runs/${id}`) });
 
-/** Runs newest first, a page at a time. */
-export function useRuns(cascade?: string) {
-  return useInfiniteQuery({
-    queryKey: keys.runs(cascade),
-    initialPageParam: undefined as number | undefined,
-    queryFn: ({ pageParam }) => {
-      const params = new URLSearchParams({ limit: String(PAGE) });
+/** A page of runs, newest first, with the number of all of them; the page on screen stays while the next one loads. */
+export function useRuns(cascade: string | undefined, page: number) {
+  return useQuery({
+    queryKey: keys.runs(cascade, page),
+    queryFn: async ({ signal }) => {
+      const params = new URLSearchParams({ limit: String(RUNS_PAGE), offset: String((page - 1) * RUNS_PAGE) });
       if (cascade !== undefined) params.set("cascade", cascade);
-      if (pageParam !== undefined) params.set("before", String(pageParam));
-      return request<RunRecord[]>("GET", `/runs?${params}`);
+      const res = await send("GET", `/runs?${params}`, signal);
+      return { runs: (await res.json()) as RunRecord[], total: Number(res.headers.get("x-total-count") ?? 0) };
     },
-    getNextPageParam: (last) => (last.length < PAGE ? undefined : last.at(-1)?.id),
+    placeholderData: keepPreviousData,
   });
 }
 

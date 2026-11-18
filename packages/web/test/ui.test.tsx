@@ -113,6 +113,19 @@ describe("cascades and runs", () => {
     expect(await screen.findByRole("heading", { name: `Run ${run.id} of daily` }, wait)).toBeDefined();
   });
 
+  it("leads back from a page past the end of the history", async () => {
+    await api<RunRecord>("POST", "/cascades/daily/run");
+    renderApp("/runs?cascade=daily&page=99");
+    expect(await screen.findByText("No runs on this page.", {}, wait)).toBeDefined();
+    const pages = screen.getByRole("navigation", { name: "Pages" });
+    expect(within(pages).getByText(/in all, page 99 of 1/)).toBeDefined();
+    expect((within(pages).getByRole("button", { name: "Older" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(within(pages).getByRole("button", { name: "Newer" }));
+    await waitFor(() => expect(location.pathname + location.search).toBe("/runs?cascade=daily"), wait);
+    expect(await screen.findAllByRole("link", { name: /^\d+$/ }, wait)).not.toHaveLength(0);
+    expect(screen.queryByRole("navigation", { name: "Pages" })).toBeNull();
+  });
+
   it("shows the live log and who holds a repo, and cancels the run", async () => {
     const run = await api<RunRecord>("POST", "/cascades/slow/run");
     try {

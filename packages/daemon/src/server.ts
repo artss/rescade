@@ -119,6 +119,8 @@ export const API_PREFIX = "/api";
 /** Served without the token (they hold no secrets; a browser cannot send it), but behind the Host check. */
 export const OPENAPI_PATH = `${API_PREFIX}/openapi.json`;
 export const DOCS_PATH = `${API_PREFIX}/docs`;
+/** The header of `GET /api/runs` with the number of matching runs. */
+export const TOTAL_HEADER = "x-total-count";
 /** For container health checks: tells nothing but that the daemon answers. */
 export const HEALTH_PATH = `${API_PREFIX}/health`;
 
@@ -165,7 +167,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
 
     const origin = request.headers.origin;
     if (origin !== undefined && deps.corsOrigins.has(origin)) {
-      reply.header("access-control-allow-origin", origin).header("vary", "Origin");
+      reply.header("access-control-allow-origin", origin).header("vary", "Origin").header("access-control-expose-headers", TOTAL_HEADER);
       if (request.method === "OPTIONS") {
         return reply
           .code(204)
@@ -327,26 +329,29 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     },
   );
 
-  app.get<{ Querystring: { cascade?: string; limit?: number; before?: number } }>(
+  app.get<{ Querystring: { cascade?: string; limit?: number; before?: number; offset?: number } }>(
     `${API_PREFIX}/runs`,
     {
       schema: {
         summary: "Runs, newest first",
+        description: `The number of matching runs without \`limit\` and \`offset\` comes in the \`${TOTAL_HEADER}\` header.`,
         querystring: {
           type: "object",
           properties: {
             cascade: { type: "string" },
             limit: { type: "integer", minimum: 1, maximum: 1000, description: "Default 50" },
             before: { ...id, description: "Only runs with a smaller id, for paging" },
+            offset: { type: "integer", minimum: 0, description: "Runs to skip, for numbered pages" },
           },
           additionalProperties: false,
         },
         response: responses(200, "Runs without their steps", arrayOf("Run"), 400),
       },
     },
-    async (request) => {
-      const { cascade, limit, before } = request.query;
-      return deps.store.runs({ cascade, limit, beforeId: before });
+    async (request, reply) => {
+      const { cascade, limit, before, offset } = request.query;
+      reply.header(TOTAL_HEADER, deps.store.countRuns({ cascade, beforeId: before }));
+      return deps.store.runs({ cascade, limit, beforeId: before, offset });
     },
   );
 

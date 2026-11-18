@@ -254,7 +254,11 @@ describe("runs over the API", () => {
     expect(daily.lastRun.id).toBe(started.body.id);
     expect(daily.nextRun).toBeGreaterThan(Date.now());
 
-    expect((await api("GET", "/api/runs?cascade=daily&limit=5")).body.map((r: RunRecord) => r.id)).toEqual([started.body.id]);
+    const runs = await api("GET", "/api/runs?cascade=daily&limit=5");
+    expect(runs.body.map((r: RunRecord) => r.id)).toEqual([started.body.id]);
+    expect(runs.headers["x-total-count"]).toBe("1");
+    const past = await api("GET", "/api/runs?cascade=daily&offset=1");
+    expect([past.body, past.headers["x-total-count"]]).toEqual([[], "1"]);
     expect((await api("POST", `/api/runs/${started.body.id}/cancel`)).status).toBe(409);
   });
 

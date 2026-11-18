@@ -5,6 +5,7 @@ import { applyEvent, keys } from "../src/queries.js";
 import { parseEvents } from "../src/sse.js";
 import { formatBytes, formatDuration } from "../src/format.js";
 import { groupItems } from "../src/groups.js";
+import { pageRange, parsePage } from "../src/paging.js";
 import { stepDetails } from "../src/steps.js";
 import { checkState, parentOf, restorePaths, toggle, type Children } from "../src/selection.js";
 import type { CascadeStep, LogRecord, RunWithSteps } from "../src/types.js";
@@ -77,11 +78,11 @@ describe("events in the query cache", () => {
   it("asks for lists again when runs change", () => {
     const qc = new QueryClient();
     qc.setQueryData(keys.cascades, []);
-    qc.setQueryData(keys.runs("daily"), { pages: [], pageParams: [] });
+    qc.setQueryData(keys.runs("daily", 2), { runs: [], total: 0 });
     qc.setQueryData(keys.repos, []);
     applyEvent(qc, { kind: "run", run: { ...run, status: "running" } });
     expect(qc.getQueryState(keys.cascades)?.isInvalidated).toBe(true);
-    expect(qc.getQueryState(keys.runs("daily"))?.isInvalidated).toBe(true);
+    expect(qc.getQueryState(keys.runs("daily", 2))?.isInvalidated).toBe(true);
     expect(qc.getQueryState(keys.repos)?.isInvalidated).toBe(false);
     applyEvent(qc, { kind: "repo", repo: "a", at: 1 });
     expect(qc.getQueryState(keys.repos)?.isInvalidated).toBe(true);
@@ -222,5 +223,19 @@ describe("picking paths to restore", () => {
     expect(checkState(picked, "/home/b")).toBe("unchecked");
     // a sibling with a longer name is not below
     expect(checkState(new Set(["/home/ab"]), "/home/a")).toBe("unchecked");
+  });
+});
+
+describe("paging", () => {
+  it("reads the page from the URL and falls back to the first", () => {
+    expect([parsePage("3"), parsePage(null), parsePage("0"), parsePage("-2"), parsePage("1.5"), parsePage("x")]).toEqual([3, 1, 1, 1, 1, 1]);
+  });
+
+  it("tells which runs a page holds and how many pages there are", () => {
+    expect(pageRange(1, 120, 50)).toEqual({ from: 1, to: 50, pages: 3 });
+    expect(pageRange(3, 120, 50)).toEqual({ from: 101, to: 120, pages: 3 });
+    expect(pageRange(2, 100, 50)).toEqual({ from: 51, to: 100, pages: 2 });
+    expect(pageRange(1, 0, 50)).toEqual({ from: 1, to: 0, pages: 1 });
+    expect(pageRange(5, 120, 50).from > pageRange(5, 120, 50).to).toBe(true);
   });
 });
