@@ -27,6 +27,12 @@ const Run = {
     cascade: { type: "string", description: "Absent for a restore" },
     restore: { $ref: "Restore#" },
     trigger: { type: "string", enum: ["schedule", "manual"] },
+    rerunOf: { type: "integer", description: "A rerun: the run whose failed step it starts from" },
+    fromStep: {
+      type: "integer",
+      minimum: 0,
+      description: "A rerun: index of the first step it runs; the steps before it were done in `rerunOf` and are not listed",
+    },
     status: {
       ...state,
       description: "`queued`: a step waits for busy repos; `interrupted`: the daemon stopped during the run",

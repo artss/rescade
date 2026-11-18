@@ -22,6 +22,10 @@ export interface RunRecord {
   cascade?: string;
   restore?: RestoreRecord;
   trigger: Trigger;
+  /** A rerun: the run whose failed step it starts from. */
+  rerunOf?: number;
+  /** A rerun: the index of the first step it runs; earlier steps were done in `rerunOf` and have no records here. */
+  fromStep?: number;
   status: RunState;
   reason?: string;
   /** Epoch milliseconds. */
@@ -82,7 +86,7 @@ export interface PruneResult {
   logLines: number;
 }
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 // the log lives in its own table, without a foreign key, so it can be rotated apart from run metadata;
 // a restore run has an empty cascade and its request in `restore` (JSON)
@@ -95,7 +99,9 @@ CREATE TABLE runs (
   reason TEXT,
   started_at INTEGER NOT NULL,
   finished_at INTEGER,
-  restore TEXT
+  restore TEXT,
+  rerun_of INTEGER,
+  from_step INTEGER
 );
 CREATE INDEX runs_by_cascade ON runs (cascade, id);
 CREATE TABLE steps (
@@ -128,6 +134,7 @@ CREATE INDEX log_by_run ON log (run_id, step, seq);
 const MIGRATIONS: Record<number, string> = {
   1: "ALTER TABLE steps ADD COLUMN repo TEXT;",
   2: "ALTER TABLE runs ADD COLUMN restore TEXT;",
+  3: "ALTER TABLE runs ADD COLUMN rerun_of INTEGER; ALTER TABLE runs ADD COLUMN from_step INTEGER;",
 };
 
 /** Run history in SQLite: runs, their steps, and step logs. */
@@ -140,7 +147,8 @@ export class Store {
   private constructor(private readonly db: DatabaseSync) {
     this.stmts = {
       insertRun: db.prepare(
-        "INSERT INTO runs (cascade, trigger, status, reason, started_at, finished_at, restore) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        `INSERT INTO runs (cascade, trigger, status, reason, started_at, finished_at, restore, rerun_of, from_step)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ),
       updateRun: db.prepare("UPDATE runs SET status = ?, reason = ?, finished_at = ? WHERE id = ?"),
       saveStep: db.prepare(
@@ -229,6 +237,8 @@ export class Store {
       run.startedAt,
       run.finishedAt ?? null,
       run.restore === undefined ? null : JSON.stringify(run.restore),
+      run.rerunOf ?? null,
+      run.fromStep ?? null,
     );
     return { id: Number(r.lastInsertRowid), ...run };
   }
@@ -321,10 +331,14 @@ function toRun(r: Row): RunRecord {
   const reason = str(r.reason);
   const finishedAt = num(r.finished_at);
   const restore = str(r.restore);
+  const rerunOf = num(r.rerun_of);
+  const fromStep = num(r.from_step);
   return {
     id: Number(r.id),
     ...(restore === undefined ? { cascade: String(r.cascade) } : { restore: JSON.parse(restore) as RestoreRecord }),
     trigger: r.trigger as Trigger,
+    ...(rerunOf === undefined ? {} : { rerunOf }),
+    ...(fromStep === undefined ? {} : { fromStep }),
     status: r.status as RunState,
     ...(reason === undefined ? {} : { reason }),
     startedAt: Number(r.started_at),

@@ -1,7 +1,18 @@
 import { existsSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { Runner, Store, warmUp, type Cascade, type Config, type RunnerEvent, type Step } from "../src/index.js";
+import {
+  rerunFrom,
+  Runner,
+  Store,
+  warmUp,
+  type Cascade,
+  type Config,
+  type RunnerEvent,
+  type RunRecord,
+  type Step,
+  type StepRecord,
+} from "../src/index.js";
 import { baseConfig, FAKE_RESTIC, FakeState } from "./helpers/fake.js";
 
 let fake: FakeState;
@@ -268,7 +279,10 @@ describe("store", () => {
     const { DatabaseSync } = await import("node:sqlite");
     (await Store.open(file)).close();
     const raw = new DatabaseSync(file);
-    raw.exec("ALTER TABLE steps DROP COLUMN repo; ALTER TABLE runs DROP COLUMN restore; PRAGMA user_version = 1;");
+    raw.exec(
+      "ALTER TABLE steps DROP COLUMN repo; ALTER TABLE runs DROP COLUMN restore; ALTER TABLE runs DROP COLUMN rerun_of; " +
+        "ALTER TABLE runs DROP COLUMN from_step; PRAGMA user_version = 1;",
+    );
     raw.close();
 
     const upgraded = await Store.open(file);
@@ -285,7 +299,10 @@ describe("store", () => {
     const before = old.insertRun({ cascade: "daily", trigger: "schedule", status: "success", startedAt: 5, finishedAt: 6 });
     old.close();
     const raw = new DatabaseSync(file);
-    raw.exec("ALTER TABLE runs DROP COLUMN restore; PRAGMA user_version = 2;");
+    raw.exec(
+      "ALTER TABLE runs DROP COLUMN restore; ALTER TABLE runs DROP COLUMN rerun_of; ALTER TABLE runs DROP COLUMN from_step; " +
+        "PRAGMA user_version = 2;",
+    );
     raw.close();
 
     const upgraded = await Store.open(file);
@@ -295,6 +312,117 @@ describe("store", () => {
     expect(upgraded.run(run.id)).toEqual({ id: run.id, restore, trigger: "manual", status: "running", startedAt: 7, steps: [] });
     expect(upgraded.runs().map((r) => r.cascade)).toEqual([undefined, "daily"]);
     upgraded.close();
+  });
+
+  it("upgrades a database of schema version 3 and records reruns", async () => {
+    const file = path.join(fake.dir, "v3.db");
+    const { DatabaseSync } = await import("node:sqlite");
+    const old = await Store.open(file);
+    const before = old.insertRun({ cascade: "daily", trigger: "schedule", status: "failed", startedAt: 5, finishedAt: 6 });
+    old.close();
+    const raw = new DatabaseSync(file);
+    raw.exec("ALTER TABLE runs DROP COLUMN rerun_of; ALTER TABLE runs DROP COLUMN from_step; PRAGMA user_version = 3;");
+    raw.close();
+
+    const upgraded = await Store.open(file);
+    expect(upgraded.run(before.id)).toEqual({ ...before, steps: [] });
+    const run = upgraded.insertRun({ cascade: "daily", trigger: "manual", rerunOf: before.id, fromStep: 2, status: "running", startedAt: 7 });
+    expect(upgraded.run(run.id)).toMatchObject({ rerunOf: before.id, fromStep: 2 });
+    upgraded.close();
+  });
+});
+
+describe("rerun", () => {
+  /** A run step that fails until `fix` is called. */
+  function flaky() {
+    const flag = path.join(fake.dir, "fixed");
+    const script = "process.exit(require('fs').existsSync(process.argv[1]) ? 0 : 1)";
+    const step: Step = { type: "run", name: "flaky", shell: false, command: [process.execPath, "-e", script, flag], env: {}, timeoutMs: 10_000, lock: [] };
+    return { step, fix: () => writeFileSync(flag, "") };
+  }
+
+  it("starts a new run from the failed step and leaves the old one as it was", async () => {
+    const f = flaky();
+    const { runner } = setup({ daily: { steps: [backupA, f.step, retainA] } });
+    const first = runner.trigger("daily", "schedule");
+    await runner.idle();
+    const failed = store.run(first.id)!;
+    expect(failed.steps.map((s) => s.status)).toEqual(["success", "failed", "skipped"]);
+
+    f.fix();
+    const callsBefore = fake.trace().length;
+    const second = runner.rerun(first.id);
+    expect(second).toMatchObject({ cascade: "daily", trigger: "manual", rerunOf: first.id, fromStep: 1, status: "running" });
+    await runner.idle();
+
+    expect(store.run(first.id)).toEqual(failed);
+    const rerun = store.run(second.id)!;
+    expect(rerun).toMatchObject({ status: "success", rerunOf: first.id, fromStep: 1 });
+    // the steps keep their indexes in the cascade; the done backup is neither run nor recorded
+    expect(rerun.steps.map((s) => [s.index, s.label, s.status])).toEqual([
+      [1, "flaky", "success"],
+      [2, "retain a", "success"],
+    ]);
+    expect(fake.trace().slice(callsBefore).some((c) => c.includes("backup"))).toBe(false);
+    expect(store.runs({ cascade: "daily" }).map((r) => r.id)).toEqual([second.id, first.id]);
+  });
+
+  it("starts from the first step without a record, and counts a warning as done", async () => {
+    const { runner } = setup({ daily: { steps: [backupA, retainA, backupC] } });
+    const run = store.insertRun({ cascade: "daily", trigger: "schedule", status: "interrupted", startedAt: 1, finishedAt: 2 });
+    store.saveStep({ runId: run.id, index: 0, type: "backup", label: "backup s -> a", status: "warning" });
+    store.saveStep({ runId: run.id, index: 1, type: "retain", label: "retain a", status: "success" });
+    const second = runner.rerun(run.id);
+    expect(second.fromStep).toBe(2);
+    await runner.idle();
+    expect(store.run(second.id)!.steps.map((s) => s.label)).toEqual(["backup s -> c"]);
+  });
+
+  it("refuses runs that cannot be rerun", async () => {
+    const { runner } = setup({ daily: { steps: [backupA, retainA] }, other: { steps: [backupC] } });
+    const insert = (status: RunRecord["status"], steps: Array<[string, StepRecord["status"]]>, cascade = "daily") => {
+      const run = store.insertRun({ cascade, trigger: "schedule", status, startedAt: 1, finishedAt: 2 });
+      steps.forEach(([label, s], index) => store.saveStep({ runId: run.id, index, type: "backup", label, status: s }));
+      return store.run(run.id)!;
+    };
+    const config = baseConfig({
+      daily: { schedule: [], onBusy: "skip", steps: [backupA, retainA] },
+    });
+
+    expect(rerunFrom(insert("success", [["backup s -> a", "success"]]), config)).toMatch(/is success, only a failed/);
+    expect(rerunFrom(insert("running", [["backup s -> a", "running"]]), config)).toMatch(/is running/);
+    expect(rerunFrom(insert("skipped", []), config)).toMatch(/ran no steps/);
+    expect(rerunFrom(insert("failed", [["backup s -> a", "success"], ["retain a", "success"]]), config)).toMatch(/all steps .* are done/);
+    const changed = insert("failed", [["backup s -> b", "success"], ["retain a", "failed"]]);
+    expect(rerunFrom(changed, config)).toBe(
+      `the steps of cascade "daily" changed since run ${changed.id}: step 1 was "backup s -> b", now "backup s -> a"`,
+    );
+    expect(rerunFrom(insert("failed", [["x", "failed"]], "gone"), config)).toBe('cascade "gone" is no longer in the config');
+    // the failed step itself may have changed: it is usually what was fixed
+    expect(rerunFrom(insert("failed", [["backup s -> a", "success"], ["old label", "failed"]]), config)).toBe(1);
+    // a step skipped because its repos were busy
+    expect(rerunFrom(insert("skipped", [["backup s -> a", "success"], ["retain a", "skipped"]]), config)).toBe(1);
+
+    const restore = store.insertRun({
+      restore: { repo: "a", snapshot: "c8b33f97", paths: [], target: "/r" },
+      trigger: "manual",
+      status: "failed",
+      startedAt: 1,
+    });
+    expect(() => runner.rerun(restore.id)).toThrow("a restore cannot be rerun");
+    expect(() => runner.rerun(999)).toThrow("no run 999");
+  });
+
+  it("is recorded as skipped while the cascade is still running", async () => {
+    const hold = holder([]);
+    const { runner } = setup({ daily: { steps: [backupA, hold.step] } });
+    const old = store.insertRun({ cascade: "daily", trigger: "schedule", status: "failed", startedAt: 1, finishedAt: 2 });
+    store.saveStep({ runId: old.id, index: 0, type: "backup", label: "backup s -> a", status: "failed" });
+    const running = runner.trigger("daily", "manual");
+    const second = runner.rerun(old.id);
+    expect(second).toMatchObject({ status: "skipped", rerunOf: old.id, fromStep: 0, reason: `run ${running.id} of this cascade is still in progress` });
+    hold.release();
+    await runner.idle();
   });
 });
 

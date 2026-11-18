@@ -2,6 +2,7 @@ import type { Config } from "../config/types.js";
 import type { EnsureResult } from "../restic/ensure.js";
 import type { LogRecord, RunRecord, StepRecord, Store, Trigger } from "../store/store.js";
 import {
+  describeStep,
   restoreStep,
   runCascade,
   runRestore,
@@ -24,6 +25,33 @@ export type RunnerEvent =
   | { kind: "step"; step: StepRecord }
   | { kind: "log"; runId: number; log: LogRecord }
   | { kind: "repo"; repo: string; result: EnsureResult; at: number };
+
+/** Run statuses a rerun can start from. */
+const RERUNNABLE = new Set<RunRecord["status"]>(["failed", "cancelled", "interrupted", "skipped"]);
+
+/**
+ * The step a rerun of the run starts from: the first one that did not end `success` or `warning`
+ * (a step without a record did not run). A string says why the run cannot be rerun.
+ * The steps before it must still be the same in the cascade (by their labels): the config may have changed.
+ */
+export function rerunFrom(run: RunRecord & { steps: StepRecord[] }, config: Config): number | string {
+  if (run.cascade === undefined) return "a restore cannot be rerun";
+  if (!RERUNNABLE.has(run.status)) return `run ${run.id} is ${run.status}, only a failed, cancelled, interrupted or skipped run can be rerun`;
+  if (run.steps.length === 0) return `run ${run.id} ran no steps`;
+  const cascade = config.cascades[run.cascade];
+  if (!cascade) return `cascade "${run.cascade}" is no longer in the config`;
+  const byIndex = new Map(run.steps.map((s) => [s.index, s]));
+  let from = 0;
+  while (from < cascade.steps.length && ["success", "warning"].includes(byIndex.get(from)?.status ?? "")) from++;
+  if (from === cascade.steps.length) return `all steps of run ${run.id} are done`;
+  for (let i = 0; i < from; i++) {
+    const label = describeStep(cascade.steps[i]!);
+    if (byIndex.get(i)!.label !== label) {
+      return `the steps of cascade "${run.cascade}" changed since run ${run.id}: step ${i + 1} was "${byIndex.get(i)!.label}", now "${label}"`;
+    }
+  }
+  return from;
+}
 
 interface Active {
   run: RunRecord;
@@ -80,6 +108,22 @@ export class Runner {
    * If the previous run of the cascade is still in progress, the new one is recorded as skipped.
    */
   trigger(cascadeName: string, trigger: Trigger): RunRecord {
+    return this.startCascade(cascadeName, trigger);
+  }
+
+  /**
+   * Starts a cascade again from the failed step of one of its runs (see `rerunFrom`); the old run stays as it was.
+   * Throws if the run cannot be rerun.
+   */
+  rerun(runId: number): RunRecord {
+    const source = this.options.store.run(runId);
+    if (!source) throw new Error(`no run ${runId}`);
+    const from = rerunFrom(source, this.config);
+    if (typeof from === "string") throw new Error(from);
+    return this.startCascade(source.cascade!, "manual", { rerunOf: runId, fromStep: from });
+  }
+
+  private startCascade(cascadeName: string, trigger: Trigger, rerun?: { rerunOf: number; fromStep: number }): RunRecord {
     const config = this.config;
     const cascade = config.cascades[cascadeName];
     if (!cascade) throw new Error(`unknown cascade "${cascadeName}"`);
@@ -92,6 +136,7 @@ export class Runner {
       const run = store.insertRun({
         cascade: cascadeName,
         trigger,
+        ...rerun,
         status: "skipped",
         reason: `run ${previous.run.id} of this cascade is still in progress`,
         startedAt: now,
@@ -101,7 +146,7 @@ export class Runner {
       return run;
     }
 
-    const run = store.insertRun({ cascade: cascadeName, trigger, status: "running", startedAt: now });
+    const run = store.insertRun({ cascade: cascadeName, trigger, ...rerun, status: "running", startedAt: now });
     return this.start(
       run,
       (index) => {
@@ -109,10 +154,15 @@ export class Runner {
         return { type: s.type, ...(s.type === "backup" ? { repo: s.repo } : {}) };
       },
       (options) =>
-        runCascade(config, cascadeName, {
-          ...options,
-          lock: (repos, wait) => options.acquire(repos, { wait: cascade.onBusy === "wait", timeoutMs: cascade.waitTimeoutMs, ...wait }),
-        }),
+        runCascade(
+          config,
+          cascadeName,
+          {
+            ...options,
+            lock: (repos, wait) => options.acquire(repos, { wait: cascade.onBusy === "wait", timeoutMs: cascade.waitTimeoutMs, ...wait }),
+          },
+          rerun?.fromStep,
+        ),
     );
   }
 

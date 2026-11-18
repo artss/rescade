@@ -280,6 +280,26 @@ describe("runs over the API", () => {
     expect(run.body.status).toBe("cancelled");
   });
 
+  it("reruns a cancelled run from its step and refuses a successful one", async () => {
+    await start();
+    const done = await api("POST", "/api/cascades/daily/run");
+    await until(() => api("GET", `/api/runs/${done.body.id}`), finished, "daily to finish");
+    expect(await api("POST", `/api/runs/${done.body.id}/rerun`)).toMatchObject({ status: 409, body: { error: expect.stringMatching(/is success/) } });
+    expect((await api("POST", "/api/runs/999/rerun")).status).toBe(404);
+
+    const started = await api("POST", "/api/cascades/slow/run");
+    await until(() => api("GET", "/api/repos"), (r) => r.body[1]?.lockedBy !== undefined, "slow to take repo b");
+    expect((await api("POST", `/api/runs/${started.body.id}/rerun`)).status).toBe(409);
+    await api("POST", `/api/runs/${started.body.id}/cancel`);
+    await until(() => api("GET", `/api/runs/${started.body.id}`), finished, "the run to stop");
+
+    await writeFile(path.join(fake.dir, "release"), "");
+    const rerun = await api("POST", `/api/runs/${started.body.id}/rerun`);
+    expect(rerun).toMatchObject({ status: 202, body: { cascade: "slow", rerunOf: started.body.id, fromStep: 0 } });
+    const run = await until(() => api("GET", `/api/runs/${rerun.body.id}`), finished, "the rerun to finish");
+    expect(run.body).toMatchObject({ status: "success", rerunOf: started.body.id, fromStep: 0, steps: [{ index: 0, status: "success" }] });
+  });
+
   it("lists snapshots of a repo held by a run, without waiting for it", async () => {
     await start();
     const started = await api("POST", "/api/cascades/slow/run");

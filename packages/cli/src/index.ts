@@ -18,6 +18,7 @@ import {
   listRepos,
   listRuns,
   listSnapshots,
+  rerunRemote,
   restoreRemote,
   runRemote,
   showLog,
@@ -38,6 +39,7 @@ Usage:
   rescade show <run>                  a run and its steps
   rescade log <run> [--step <n>]      the log of a run (steps count from 1)
   rescade cancel <run>
+  rescade rerun <run> [--detach]      run the cascade of a failed run again from its failed step
   rescade repos                       repo state and who holds them
   rescade snapshots <repo>            snapshots of a repo, newest first
   rescade ls <repo> <snapshot> [path] what is in a directory of a snapshot (default /)
@@ -52,7 +54,7 @@ Options:
   --json                machine-readable output
   --local               run: run the cascade in this process, without the daemon
   --restic <path>       run --local: restic binary (default: $RESCADE_RESTIC, then restic)
-  --detach              run, restore: only start the run and print its id
+  --detach              run, rerun, restore: only start the run and print its id
   --url <url>           the daemon (default: $RESCADE_URL, then http://127.0.0.1:8765)
   --token-file <path>   API token (default: $RESCADE_TOKEN, $RESCADE_TOKEN_FILE,
                         then ~/.config/rescade/token)
@@ -67,6 +69,7 @@ Exit codes:
   validate  0 valid, 1 config has errors, 2 bad usage
   run       0 success, 3 warning, 1 failed, interrupted or config errors, 130 cancelled,
             75 skipped (repos busy or the cascade already running), 2 bad usage
+  rerun     as run; 1 also when the run cannot be rerun
   restore   0 success, 1 failed or interrupted, 130 cancelled, 2 bad usage
   others    0 done, 1 error from the daemon or no connection, 2 bad usage
 `;
@@ -227,6 +230,39 @@ async function run(argv: string[]): Promise<number> {
   return RUN_EXIT[result.status];
 }
 
+async function rerun(argv: string[]): Promise<number> {
+  let parsed;
+  try {
+    parsed = parseArgs({
+      args: argv,
+      options: {
+        detach: { type: "boolean", default: false },
+        json: { type: "boolean", default: false },
+        ...CONNECTION_OPTIONS,
+        help: { type: "boolean", short: "h", default: false },
+      },
+      allowPositionals: true,
+    });
+  } catch (e) {
+    return usageError(e);
+  }
+  const { values, positionals } = parsed;
+  if (values.help) {
+    process.stdout.write(HELP);
+    return 0;
+  }
+  const [id, ...extra] = positionals;
+  if (id === undefined || extra.length > 0) {
+    console.error("rescade: rerun needs one run id");
+    return 2;
+  }
+  if (!/^[1-9]\d*$/.test(id)) {
+    console.error(`rescade: run id must be a positive number, got "${id}"`);
+    return 2;
+  }
+  return rerunRemote(await connect(values), id, values.detach, values.json);
+}
+
 async function restore(argv: string[]): Promise<number> {
   let parsed;
   try {
@@ -368,6 +404,8 @@ async function main(argv: string[]): Promise<number> {
       return validate(rest);
     case "run":
       return run(rest);
+    case "rerun":
+      return rerun(rest);
     case "restore":
       return restore(rest);
     case "status":

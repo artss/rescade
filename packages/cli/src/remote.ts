@@ -49,9 +49,27 @@ const exitCode = (status: RunRecord["status"]) => (finished(status) ? RUN_EXIT[s
  * Starts the cascade on the daemon and follows it like `run --local` does, unless `detach`.
  * The first Ctrl+C asks the daemon to cancel the run, the second leaves it running and exits.
  */
-export async function runRemote(client: ApiClient, cascade: string, detach: boolean, json: boolean): Promise<number> {
+export function runRemote(client: ApiClient, cascade: string, detach: boolean, json: boolean): Promise<number> {
+  return followCascade(client, cascade, () => client.post<RunRecord>(`/cascades/${encodeURIComponent(cascade)}/run`), detach, json);
+}
+
+/** Reruns a cascade from the failed step of a run (`POST /runs/:id/rerun`); output and Ctrl+C as in `run`. */
+export async function rerunRemote(client: ApiClient, id: string, detach: boolean, json: boolean): Promise<number> {
+  // the cascade to follow; this also reports an unknown run before anything starts
+  const source = await client.get<RunRecord>(`/runs/${id}`);
+  if (source.cascade === undefined) throw new Error(`run ${id} is a restore, it cannot be rerun`);
+  return followCascade(client, source.cascade, () => client.post<RunRecord>(`/runs/${id}/rerun`), detach, json);
+}
+
+async function followCascade(
+  client: ApiClient,
+  cascade: string,
+  start: () => Promise<RunRecord>,
+  detach: boolean,
+  json: boolean,
+): Promise<number> {
   if (detach) {
-    const run = await client.post<RunRecord>(`/cascades/${encodeURIComponent(cascade)}/run`);
+    const run = await start();
     if (json) print(run);
     else console.log(run.status === "skipped" ? `run ${run.id} skipped: ${run.reason}` : `run ${run.id} started`);
     return run.status === "skipped" ? RUN_EXIT.skipped : 0;
@@ -62,7 +80,7 @@ export async function runRemote(client: ApiClient, cascade: string, detach: bool
   const tag = (index: number) => (total === undefined ? `[${index + 1}]` : `[${index + 1}/${total}]`);
   return follow(client, {
     events: `?cascade=${encodeURIComponent(cascade)}`,
-    start: () => client.post<RunRecord>(`/cascades/${encodeURIComponent(cascade)}/run`),
+    start,
     tag,
     json,
     done: (last, took) => `cascade "${cascade}": ${last.status}${took}`,
@@ -173,7 +191,8 @@ async function follow(
 function runSubject(run: RunRecord): string {
   const r = run.restore;
   if (r) return `(restore of ${r.snapshot.slice(0, 8)} from "${r.repo}" into ${r.target})`;
-  return `of "${run.cascade ?? ""}"`;
+  const rerun = run.rerunOf === undefined ? "" : ` (rerun of run ${run.rerunOf} from step ${(run.fromStep ?? 0) + 1})`;
+  return `of "${run.cascade ?? ""}"${rerun}`;
 }
 
 function belongsTo(e: ServerEvent, runId: number): boolean {

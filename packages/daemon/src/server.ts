@@ -9,6 +9,7 @@ import {
   listSnapshots,
   MAX_DIR_ENTRIES,
   MAX_RESTORE_PATHS,
+  rerunFrom,
   SNAPSHOT_ID,
   type BrowseProblem,
   type BrowseResult,
@@ -416,6 +417,39 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
       const run = deps.store.run(runId);
       if (!run) return reply.code(404).send({ error: `no run ${runId}` });
       return reply.code(409).send({ error: `run ${runId} is not in progress (${run.status})` });
+    },
+  );
+
+  app.post<{ Params: { id: number } }>(
+    `${API_PREFIX}/runs/:id/rerun`,
+    {
+      schema: {
+        summary: "Rerun a cascade from the failed step of a run",
+        description:
+          "A new run of the cascade starts from the first step of the given run that did not end `success` or `warning`; " +
+          "the given run stays as it was. Like any run it is `skipped` with a reason when the cascade is already running.",
+        params: idParams,
+        response: responses(
+          202,
+          "The new run",
+          ref("Run"),
+          400,
+          404,
+          [409, "The run cannot be rerun: a restore, not finished, nothing failed, or the cascade's steps changed"],
+          503,
+        ),
+      },
+    },
+    async (request, reply) => {
+      const { id: runId } = request.params;
+      const source = deps.store.run(runId);
+      if (!source) return reply.code(404).send({ error: `no run ${runId}` });
+      const from = rerunFrom(source, deps.config());
+      if (typeof from === "string") return reply.code(409).send({ error: from });
+      if (deps.runner.isStopping) return reply.code(503).send({ error: "the daemon is stopping" });
+      const run = deps.runner.rerun(runId);
+      request.log.info({ run: run.id, rerunOf: runId, fromStep: from, status: run.status }, "rerun requested");
+      return reply.code(202).send(run);
     },
   );
 

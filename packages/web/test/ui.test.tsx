@@ -132,6 +132,17 @@ describe("cascades and runs", () => {
       fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
       await waitFor(() => expect(within(screen.getByRole("heading", { level: 1 }).parentElement!).getByText("cancelled")), wait);
       expect(screen.queryByRole("button", { name: /Cancel/ })).toBeNull();
+
+      // the cancelled run is started again from its step
+      await writeFile(path.join(inject("fakeDir"), "release"), "");
+      fireEvent.click(screen.getByRole("button", { name: "Rerun from failed" }));
+      await waitFor(() => expect(location.pathname).not.toBe(`/runs/${run.id}`), wait);
+      const rerun = await api<RunRecord>("GET", location.pathname);
+      expect(rerun).toMatchObject({ cascade: "slow", rerunOf: run.id, fromStep: 0 });
+      expect(await screen.findByRole("heading", { name: `Run ${rerun.id} of slow` }, wait)).toBeDefined();
+      expect(screen.getByRole("link", { name: `run ${run.id}` }).getAttribute("href")).toBe(`/runs/${run.id}`);
+      await waitFor(() => expect(within(screen.getByRole("heading", { level: 1 }).parentElement!).getByText("success")), wait);
+      expect(screen.queryByRole("button", { name: "Rerun from failed" })).toBeNull();
     } finally {
       await writeFile(path.join(inject("fakeDir"), "release"), "");
     }

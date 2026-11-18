@@ -29,6 +29,9 @@ const restoreRun: RunRecord = {
   status: "running",
   startedAt: 3000,
 };
+const rerunRun: RunRecord = { ...run, id: 9, rerunOf: 7, fromStep: 0, status: "running", startedAt: 4000 };
+delete rerunRun.reason;
+delete rerunRun.finishedAt;
 const restoreRequests: unknown[] = [];
 const step: StepRecord = {
   runId: 7,
@@ -137,6 +140,7 @@ cascades:
     runner: {
       running: () => [run],
       trigger: () => run,
+      rerun: () => rerunRun,
       restore: (request: unknown) => {
         restoreRequests.push(request);
         return restoreRun;
@@ -191,6 +195,7 @@ describe("response schemas", () => {
     ["GET", "/api/runs/7", 200],
     ["GET", "/api/runs/7/log", 200],
     ["POST", "/api/runs/7/cancel", 202],
+    ["POST", "/api/runs/7/rerun", 202],
     ["GET", "/api/repos", 200],
     ["GET", "/api/summary", 200],
     ["GET", "/api/repos/a/snapshots", 200],
@@ -488,6 +493,7 @@ describe("OpenAPI document", () => {
       "POST /api/cascades/{name}/run",
       "POST /api/repos/{name}/snapshots/{id}/restore",
       "POST /api/runs/{id}/cancel",
+      "POST /api/runs/{id}/rerun",
     ]);
     for (const { op, codes } of operations) {
       expect(codes.some((c) => c.startsWith("2"))).toBe(true);

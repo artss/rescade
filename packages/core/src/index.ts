@@ -21,7 +21,7 @@ export type {
 } from "./run/cascade.js";
 export { RepoLocks } from "./run/locks.js";
 export type { AcquireOptions, LockOwner, LockResult } from "./run/locks.js";
-export { Runner } from "./run/runner.js";
+export { rerunFrom, Runner } from "./run/runner.js";
 export type { RunnerEvent, RunnerOptions } from "./run/runner.js";
 export { Scheduler } from "./schedule.js";
 export { Store } from "./store/store.js";

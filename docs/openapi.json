@@ -74,6 +74,15 @@
               "manual"
             ]
           },
+          "rerunOf": {
+            "type": "integer",
+            "description": "A rerun: the run whose failed step it starts from"
+          },
+          "fromStep": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "A rerun: index of the first step it runs; the steps before it were done in `rerunOf` and are not listed"
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -202,6 +211,15 @@
               "schedule",
               "manual"
             ]
+          },
+          "rerunOf": {
+            "type": "integer",
+            "description": "A rerun: the run whose failed step it starts from"
+          },
+          "fromStep": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "A rerun: index of the first step it runs; the steps before it were done in `rerunOf` and are not listed"
           },
           "status": {
             "type": "string",
@@ -1643,6 +1661,95 @@
           },
           "409": {
             "description": "The run is not in progress",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs/{id}/rerun": {
+      "post": {
+        "summary": "Rerun a cascade from the failed step of a run",
+        "description": "A new run of the cascade starts from the first step of the given run that did not end `success` or `warning`; the given run stays as it was. Like any run it is `skipped` with a reason when the cascade is already running.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "The new run",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Run"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Host not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The run cannot be rerun: a restore, not finished, nothing failed, or the cascade's steps changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The daemon is stopping",
             "content": {
               "application/json": {
                 "schema": {
