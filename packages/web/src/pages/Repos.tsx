@@ -10,7 +10,7 @@ export function ReposPage() {
   if (!data) return <Loading />;
   return (
     <div className="space-y-3">
-      <GroupedList items={data} groupOf={(r) => r.group} keyOf={(r) => r.name} render={(r) => <RepoCard repo={r} />} />
+      <GroupedList list="repos" items={data} groupOf={(r) => r.group} keyOf={(r) => r.name} render={(r) => <RepoCard repo={r} />} />
       <StaleLocksNote repos={data} />
     </div>
   );
