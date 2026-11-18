@@ -1,4 +1,4 @@
-import { mdiChevronRight } from "@mdi/js";
+import { mdiChevronRight, mdiPlayOutline } from "@mdi/js";
 import { useId, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { formatDuration } from "../format.js";
@@ -57,7 +57,7 @@ function CascadeCard({ cascade: c }: { cascade: CascadeView }) {
             Running
           </Link>
         ) : (
-          <Button onClick={run} disabled={start.isPending} aria-label={`Run ${c.name}`}>
+          <Button icon={mdiPlayOutline} onClick={run} disabled={start.isPending} aria-label={`Run ${c.name}`}>
             Run
           </Button>
         )}

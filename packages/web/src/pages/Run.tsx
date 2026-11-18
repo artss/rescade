@@ -1,3 +1,4 @@
+import { mdiCloseCircleOutline, mdiPlayOutline } from "@mdi/js";
 import { useLayoutEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { formatBytes, formatDuration } from "../format.js";
@@ -40,6 +41,7 @@ export function RunPage({ id }: { id: number }) {
             <span className="ml-auto">
               <Button
                 danger
+                icon={mdiCloseCircleOutline}
                 onClick={() => {
                   if (confirm(`Cancel run ${run.id}? The current step will be stopped.`)) cancel.mutate(run.id);
                 }}
@@ -51,6 +53,7 @@ export function RunPage({ id }: { id: number }) {
           {canRerun(run) && (
             <span className="ml-auto">
               <Button
+                icon={mdiPlayOutline}
                 onClick={() => rerun.mutate(run.id, { onSuccess: (r) => navigate(`/runs/${r.id}`) })}
                 disabled={rerun.isPending}
               >

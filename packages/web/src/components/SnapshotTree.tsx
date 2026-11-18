@@ -1,4 +1,12 @@
-import { mdiCheckboxBlankOutline, mdiCheckboxOutline, mdiChevronRight, mdiLink, mdiLoading, mdiMinusBoxOutline } from "@mdi/js";
+import {
+  mdiBackupRestore,
+  mdiCheckboxBlankOutline,
+  mdiCheckboxOutline,
+  mdiChevronRight,
+  mdiLink,
+  mdiLoading,
+  mdiMinusBoxOutline,
+} from "@mdi/js";
 import { asyncDataLoaderFeature, hotkeysCoreFeature, type ItemInstance } from "@headless-tree/core";
 import { useTree } from "@headless-tree/react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -201,6 +209,7 @@ function RestoreBar({ repo, snapshot, picked }: { repo: string; snapshot: Snapsh
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-3">
         <Button
+          icon={mdiBackupRestore}
           disabled={off || restore.isPending}
           onClick={() => restore.mutate(paths, { onSuccess: (run) => navigate(`/runs/${run.id}`) })}
         >
