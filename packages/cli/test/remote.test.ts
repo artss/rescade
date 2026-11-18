@@ -261,6 +261,33 @@ describe("the CLI through the daemon", () => {
     expect(r.code).toBe(130);
   });
 
+  it("reruns a cancelled run from its step and explains why a run cannot be rerun", async () => {
+    let sent = false;
+    const r = await cli(["run", "slow"], {}, (text, kill) => {
+      if (!sent && text.includes("==> [1/1]")) {
+        sent = true;
+        kill("SIGINT");
+      }
+    });
+    expect(r.code).toBe(130);
+    const id = Number(/run (\d+)/.exec(r.stdout)![1]);
+
+    await writeFile(path.join(fake.dir, "release"), "");
+    const rerun = await cli(["rerun", String(id)]);
+    expect(rerun.stderr).toBe("");
+    expect(rerun.code).toBe(0);
+    const lines = rerun.stdout.trim().split("\n");
+    expect(lines[0]).toMatch(new RegExp(`^run \\d+ of "slow" \\(rerun of run ${id} from step 1\\) started$`));
+    expect(lines.at(-1)).toMatch(/^cascade "slow": success in /);
+
+    const again = await cli(["rerun", String(id + 1)]);
+    expect(again.code).toBe(1);
+    expect(again.stderr).toMatch(new RegExp(`^rescade: run ${id + 1} is success, only a failed`));
+    expect((await cli(["rerun", "999"])).stderr).toBe("rescade: no run 999\n");
+    expect((await cli(["rerun", "abc"])).code).toBe(2);
+    expect((await cli(["rerun"])).code).toBe(2);
+  });
+
   it("explains connection and token problems", async () => {
     const wrong = await cli(["status"], { RESCADE_TOKEN: "wrong" });
     expect(wrong.code).toBe(1);

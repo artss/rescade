@@ -133,11 +133,14 @@ export function describeStep(step: Step | RestoreStep): string {
   }
 }
 
-/** Runs the steps of one cascade in order. Stops at the first failed step; the rest are skipped. */
-export async function runCascade(config: Config, cascadeName: string, options: RunOptions): Promise<RunResult> {
+/**
+ * Runs the steps of one cascade in order. Stops at the first failed step; the rest are skipped.
+ * With `fromStep` (a rerun) the steps before it are left out: no events and no results for them.
+ */
+export async function runCascade(config: Config, cascadeName: string, options: RunOptions, fromStep = 0): Promise<RunResult> {
   const cascade = config.cascades[cascadeName];
   if (!cascade) throw new Error(`unknown cascade "${cascadeName}"`);
-  return { cascade: cascadeName, ...(await runSteps(config, cascade.steps, options)) };
+  return { cascade: cascadeName, ...(await runSteps(config, cascade.steps, options, fromStep)) };
 }
 
 /** Paths one restore may name; each becomes an argument of restic. */
@@ -164,7 +167,12 @@ export function runRestore(config: Config, step: RestoreStep, options: RunOption
   return runSteps(config, [step], options);
 }
 
-async function runSteps(config: Config, steps: Array<Step | RestoreStep>, options: RunOptions): Promise<RunResult> {
+async function runSteps(
+  config: Config,
+  steps: Array<Step | RestoreStep>,
+  options: RunOptions,
+  fromStep = 0,
+): Promise<RunResult> {
   const emit = options.onEvent ?? (() => {});
   const ctx: ResticContext = {
     binary: options.restic,
@@ -181,6 +189,7 @@ async function runSteps(config: Config, steps: Array<Step | RestoreStep>, option
   let reason: string | undefined;
 
   for (const [index, step] of steps.entries()) {
+    if (index < fromStep) continue;
     const label = describeStep(step);
     if (stopped || options.signal?.aborted) {
       const result: StepResult = { index, type: step.type, label, status: "skipped" };

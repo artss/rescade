@@ -140,5 +140,16 @@ export function useStartRun() {
   });
 }
 
+/** Starts the cascade of a run again from its failed step; the daemon says why when it cannot. */
+export const useRerun = () =>
+  useMutation({ mutationFn: (id: number) => request<RunRecord>("POST", `/runs/${id}/rerun`) });
+
+/**
+ * Whether the run page offers a rerun: a finished cascade run that did not succeed and ran steps.
+ * The daemon also checks that the cascade still has the same steps before the failed one.
+ */
+export const canRerun = (run: RunWithSteps) =>
+  run.cascade !== undefined && ["failed", "cancelled", "interrupted", "skipped"].includes(run.status) && run.steps.length > 0;
+
 export const useCancelRun = () =>
   useMutation({ mutationFn: (id: number) => request<{ cancelling: boolean }>("POST", `/runs/${id}/cancel`) });

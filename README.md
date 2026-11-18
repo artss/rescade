@@ -130,6 +130,7 @@ mounted read-only, history and restic's cache in a volume.
     rescade show <run>
     rescade log <run> [--step <n>]
     rescade cancel <run>
+    rescade rerun <run> [--detach]      # start the cascade of a failed run again from its failed step
     rescade repos
     rescade snapshots <repo>
     rescade ls <repo> <snapshot> [path]

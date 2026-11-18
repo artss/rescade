@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { formatBytes, formatDuration } from "../format.js";
-import { isActive, useCancelRun, useLog, useRun } from "../queries.js";
+import { canRerun, isActive, useCancelRun, useLog, useRerun, useRun } from "../queries.js";
 import type { LogRecord, StepRecord } from "../types.js";
 import { Badge } from "../components/Badge.js";
 import { Button } from "../components/Button.js";
@@ -14,6 +14,8 @@ import { snapshotHref } from "./Repo.js";
 export function RunPage({ id }: { id: number }) {
   const { data: run, error } = useRun(id);
   const cancel = useCancelRun();
+  const rerun = useRerun();
+  const [, navigate] = useLocation();
   if (error) return <ErrorBox error={error} />;
   if (!run) return <Loading />;
   const active = isActive(run.status);
@@ -41,13 +43,33 @@ export function RunPage({ id }: { id: number }) {
               </Button>
             </span>
           )}
+          {canRerun(run) && (
+            <span className="ml-auto">
+              <Button
+                onClick={() => rerun.mutate(run.id, { onSuccess: (r) => navigate(`/runs/${r.id}`) })}
+                disabled={rerun.isPending}
+              >
+                Rerun from failed
+              </Button>
+            </span>
+          )}
         </div>
         <p className="mt-1 text-sm text-zinc-500">
           Started <Time ms={run.startedAt} />
           {run.finishedAt !== undefined && <>, took {formatDuration(run.finishedAt - run.startedAt)}</>}
         </p>
         {run.reason && <p className="mt-2 text-sm">{run.reason}</p>}
+        {run.rerunOf !== undefined && (
+          <p className="mt-2 text-sm text-zinc-500">
+            Rerun of{" "}
+            <Link href={`/runs/${run.rerunOf}`} className="text-sky-700 hover:underline dark:text-sky-400">
+              run {run.rerunOf}
+            </Link>
+            {(run.fromStep ?? 0) > 0 && <>: {run.fromStep === 1 ? "step 1 was" : `steps 1–${run.fromStep} were`} done there</>}
+          </p>
+        )}
         {cancel.error && <div className="mt-2"><ErrorBox error={cancel.error} /></div>}
+        {rerun.error && <div className="mt-2"><ErrorBox error={rerun.error} /></div>}
       </Card>
 
       <ol className="space-y-2">
