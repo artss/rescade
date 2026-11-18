@@ -162,3 +162,16 @@ export function checkArgs(step: CheckStep): string[] {
 
 /** The source comes from RESTIC_FROM_REPOSITORY. */
 export const copyArgs = (): string[] => ["copy"];
+
+/**
+ * An absolute path as a restic `--include` pattern: the pattern characters are escaped. A "!" negates a pattern
+ * only at its start, where an absolute path has "/"; restic does not expand `$VAR` in patterns given as arguments.
+ */
+export const literalPattern = (p: string): string => p.replace(/[*?[\]\\]/g, "\\$&");
+
+/** The whole snapshot without `paths`; otherwise only those paths, directories with everything below them. */
+export function restoreArgs(snapshot: string, target: string, paths: string[]): string[] {
+  const args = ["restore", "--json", "--target", target];
+  for (const p of paths) args.push("--include", literalPattern(p));
+  return [...args, "--", snapshot];
+}

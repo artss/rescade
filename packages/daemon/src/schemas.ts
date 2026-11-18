@@ -24,7 +24,8 @@ const Run = {
   type: "object",
   properties: {
     id: { type: "integer" },
-    cascade: { type: "string" },
+    cascade: { type: "string", description: "Absent for a restore" },
+    restore: { $ref: "Restore#" },
     trigger: { type: "string", enum: ["schedule", "manual"] },
     status: {
       ...state,
@@ -34,7 +35,20 @@ const Run = {
     startedAt: epochMs,
     finishedAt: epochMs,
   },
-  required: ["id", "cascade", "trigger", "status", "startedAt"],
+  required: ["id", "trigger", "status", "startedAt"],
+} as const;
+
+const Restore = {
+  $id: "Restore",
+  type: "object",
+  description: "A restore run: what is restored and where to",
+  properties: {
+    repo: { type: "string" },
+    snapshot: { type: "string", description: "The snapshot id as given" },
+    paths: { type: "array", items: { type: "string" }, description: "Empty: the whole snapshot" },
+    target: { type: "string", description: "`<restore dir>/<short id>`; the snapshot's paths are kept below it" },
+  },
+  required: ["repo", "snapshot", "paths", "target"],
 } as const;
 
 const Step = {
@@ -43,7 +57,7 @@ const Step = {
   properties: {
     runId: { type: "integer" },
     index: { type: "integer" },
-    type: stepType,
+    type: { type: "string", enum: [...stepType.enum, "restore"] },
     label: { type: "string" },
     status: state,
     exitCode: { type: "integer" },
@@ -51,8 +65,11 @@ const Step = {
     durationMs: { type: "integer" },
     reason: { type: "string" },
     stderrTail: { type: "array", items: { type: "string" }, description: "Last stderr lines of a failed process" },
-    summary: { type: "object", additionalProperties: true, description: "backup: restic's JSON summary" },
-    repo: { type: "string", description: "backup: the repo the snapshot (`summary.snapshot_id`) goes to" },
+    summary: { type: "object", additionalProperties: true, description: "backup, restore: restic's JSON summary" },
+    repo: {
+      type: "string",
+      description: "backup: the repo the snapshot (`summary.snapshot_id`) goes to; restore: the repo it comes from",
+    },
   },
   required: ["runId", "index", "type", "label", "status"],
 } as const;
@@ -164,8 +181,8 @@ const LockOwner = {
   $id: "LockOwner",
   type: "object",
   description: "The rescade run whose step holds a repo",
-  properties: { runId: { type: "integer" }, cascade: { type: "string" } },
-  required: ["runId", "cascade"],
+  properties: { runId: { type: "integer" }, cascade: { type: "string", description: "Absent for a restore" } },
+  required: ["runId"],
 } as const;
 
 const ResticLock = {
@@ -386,6 +403,7 @@ const Event = {
 
 export const schemas = [
   ErrorBody,
+  Restore,
   Run,
   Step,
   RunWithSteps,

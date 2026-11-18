@@ -22,21 +22,24 @@ SIGHUP, остановка с `interrupted`, чистка истории раз 
 ответов для сериализации и `GET /api/openapi.json` и Swagger UI на `/api/docs` без токена; копия в `docs/openapi.json`;
 API под `/api`, остальные пути отдают собранный веб-интерфейс с fallback на `index.html`). Срок хранения истории
 и логов `Store.prune`, локи restic `src/restic/lockfiles.ts` (читаются в ensure перед каждым шагом). `packages/cli`: `validate`, `run --local`, а через
-демон `run [--detach]`, `status`, `runs`, `show`, `log`, `cancel`, `repos` (`client.ts` HTTP и SSE, `remote.ts` команды).
+демон `run [--detach]`, `status`, `runs`, `show`, `log`, `cancel`, `repos`, `snapshots`, `ls`, `restore` (`client.ts` HTTP и SSE, `remote.ts` команды).
 `packages/web`: веб-интерфейс (React, TanStack Query, Tailwind 4, Vite, `wouter`; `api.ts`/`token.ts` запросы и токен,
 `sse.ts` поток событий через fetch, `queries.ts` хуки и `applyEvent`, `log.ts` склейка лога по `id`, `groups.ts` и `components/Group.tsx` группы по полю `group` у репо и каскадов (свёрнутые помнятся в `localStorage`, `collapsed.ts`), `pages/*`), демон
 находит его сборку через `import.meta.resolve("@rescade/web/package.json")`.
 Просмотр снапшотов (`src/restic/snapshots.ts`: `restic snapshots`/`ls` без мьютекса, `--retry-lock 10s`; маршруты
 `/api/repos/:name/snapshots[/:id/ls]`, CLI `snapshots` и `ls`, страница репо `pages/Repo.tsx` (состояние и снапшоты, ссылка с имени на `/repos`); у шага backup поле
 `repo`, схема базы v2 с миграцией в `Store.open`). Бэкенды restic (`src/config/backends.ts`: префикс `path`, опции по бэкенду, конфликты `env`/`options` в парах
-`copy`/`from`; описание в `docs/backends.md`). 246 тестов vitest (проекты `node` и `web`), фейковый restic в `packages/core/test/fake-restic.mjs`, 8 интеграционных с настоящим restic
+`copy`/`from`; описание в `docs/backends.md`). 270 тестов vitest (проекты `node` и `web`), фейковый restic в `packages/core/test/fake-restic.mjs`, 9 интеграционных с настоящим restic
 (проверено на 0.19.1), пример в `examples/config`.
 
 Шаги 1–7 из DESIGN.md сделаны. Шаг 8: `Dockerfile`, `.github/workflows/ci.yaml` (тесты, затем образ
 в `ghcr.io/artss/rescade` для amd64/arm64), пример `examples/docker`. Виджет для homepage: `GET /api/summary` (плоские счётчики для `customapi`), конфиг в README.
 Отложено: экран логов демона, уведомления, веб-редактор конфига.
 
-Шаг 9 (восстановление): просмотр снапшотов сделан, сам restore ещё не обсуждался.
+Шаг 9 (восстановление): просмотр снапшотов и restore в ядре, API и CLI сделаны (`runRestore`/`restoreStep` в
+`src/run/cascade.ts`, `Runner.restore`, запуск без `cascade` с полем `restore`, схема базы v3, `--restore-dir` /
+`RESCADE_RESTORE_DIR` у демона, `POST /api/repos/:name/snapshots/:id/restore`, CLI `restore`). Веб-интерфейс для
+restore — следующий шаг.
 
 Проверено на Linux: `pnpm test:integration` (restic 0.19.1 с релиза), образ с bind mount настоящих каталогов
 под `/host` (backup файлов только для root, родительский снапшот при повторе, `copy` с `from`, restore со снятием префикса,
@@ -138,5 +141,10 @@ SIGHUP, `interrupted` после `docker stop` и после `kill -9`). Рел�
   `SCHEMA` всегда описывает последнюю версию для новой базы.
 - `date-fns` импортируется по подпутям (`date-fns/format`): индекс пакета грузит все функции, это ~1 с на каждый запуск
   CLI, и сквозные тесты CLI упирались в таймаут.
+- `restic restore --include` на путь, которого нет в снапшоте, выходит с 0 и ничего не восстанавливает; поэтому
+  `files_restored + files_skipped` = 0 при заданных путях считается `failed`. Ошибки записи — строки `error` и код 1.
+- Fastify (ajv с `removeAdditional`) молча выкидывает лишние поля тела при `additionalProperties: false`, а не
+  отвечает 400. POST без тела валидируется как `undefined` («body must be object»), поэтому у restore `preValidation`
+  подставляет `{}`.
 - В режиме `--allow-missing-env` значения подменяются на `<NAME is unset>`: годится для валидации, не для запуска
   (список в `LoadResult.missingEnv`).

@@ -61,7 +61,7 @@ export interface RepoView {
   id?: string;
   chunkerPolynomial?: string;
   locks?: RepoLockList;
-  lockedBy?: { runId: number; cascade: string };
+  lockedBy?: { runId: number; cascade?: string };
 }
 
 /** `GET /api/status`. */

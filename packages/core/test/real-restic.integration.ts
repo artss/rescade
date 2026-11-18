@@ -1,9 +1,21 @@
 import { execFileSync, spawn } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { checkResticVersion, ensureRepo, listDir, listSnapshots, runCascade, type Cascade, type Config, type RunEvent, type Step } from "../src/index.js";
+import {
+  checkResticVersion,
+  ensureRepo,
+  listDir,
+  listSnapshots,
+  restoreStep,
+  runCascade,
+  runRestore,
+  type Cascade,
+  type Config,
+  type RunEvent,
+  type Step,
+} from "../src/index.js";
 import { repo } from "./helpers/fake.js";
 
 const RESTIC = process.env.RESCADE_RESTIC ?? "restic";
@@ -122,6 +134,56 @@ describe("with real restic", () => {
 
     expect(await listDir(ctx, "c", id, path.join(src, "nope"))).toMatchObject({ ok: false, problem: "not-found" });
     expect(await listDir(ctx, "c", "0123456789abcdef", "/")).toMatchObject({ ok: false, problem: "not-found" });
+  });
+
+  it("restores a whole snapshot or literal paths, names with pattern characters included", async () => {
+    const odd = path.join(dir, "odd");
+    const names = ["a[1].txt", "a1.txt", "st*r", "q?", "back\\slash", "!neg", "$HOME"];
+    await mkdir(path.join(odd, "d"), { recursive: true });
+    for (const n of names) await writeFile(path.join(odd, n), n);
+    await writeFile(path.join(odd, "d", "inner"), "inner");
+    const cfg = config([]);
+    cfg.sets.odd = { include: [odd], exclude: [], tags: [], oneFileSystem: false, excludeCaches: false };
+    cfg.cascades.c = { schedule: [], onBusy: "skip", steps: [{ type: "backup", set: "odd", repo: "c", tags: [] }] };
+    const backup = await runCascade(cfg, "c", { restic: RESTIC, env });
+    const id = backup.steps[0]?.summary?.snapshot_id as string;
+    const restoreDir = path.join(dir, "restore");
+    await mkdir(restoreDir);
+    const target = path.join(restoreDir, id.slice(0, 8));
+    const restore = (paths: string[]) => runRestore(cfg, restoreStep({ repo: "c", snapshot: id.slice(0, 8), paths }, restoreDir), { restic: RESTIC, env });
+    const files = async () =>
+      (await readdir(target, { recursive: true, withFileTypes: true }))
+        .filter((e) => e.isFile())
+        .map((e) => path.relative(target, path.join(e.parentPath, e.name)))
+        .sort();
+
+    // each odd name alone restores exactly that file, not what its pattern would match
+    for (const n of names) {
+      await rm(target, { recursive: true, force: true });
+      const r = await restore([path.join(odd, n)]);
+      expect(r.status, `${n}: ${r.reason}`).toBe("success");
+      expect(await files()).toEqual([path.join(odd, n).slice(1)]);
+    }
+
+    // a directory with everything below; again into the same place, files already there are skipped
+    await rm(target, { recursive: true, force: true });
+    expect((await restore([path.join(odd, "d")])).status).toBe("success");
+    const again = await restore([path.join(odd, "d")]);
+    expect(again.status).toBe("success");
+    expect(again.steps[0]?.summary).toMatchObject({ files_skipped: 1 });
+    expect(await files()).toEqual([path.join(odd, "d", "inner").slice(1)]);
+
+    const whole = await restore([]);
+    expect(whole.status).toBe("success");
+    expect((await files()).length).toBe(names.length + 1);
+    expect(await readFile(path.join(target, odd, "st*r"), "utf8")).toBe("st*r");
+
+    expect(await restore([path.join(odd, "nope")])).toMatchObject({
+      status: "failed",
+      reason: expect.stringMatching(/has none of the given paths$/),
+    });
+    const unknown = await runRestore(cfg, restoreStep({ repo: "c", snapshot: "0123456789abcdef" }, restoreDir), { restic: RESTIC, env });
+    expect(unknown.reason).toMatch(/no matching ID found for prefix "0123456789abcdef"/);
   });
 
   it.skipIf(isRoot)("reports unreadable files as a warning and goes on", async () => {

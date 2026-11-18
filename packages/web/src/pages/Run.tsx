@@ -24,9 +24,13 @@ export function RunPage({ id }: { id: number }) {
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-lg font-semibold">
             Run {run.id} of{" "}
-            <Link href={`/runs?cascade=${encodeURIComponent(run.cascade)}`} className="text-sky-700 hover:underline dark:text-sky-400">
-              {run.cascade}
-            </Link>
+            {run.cascade === undefined ? (
+              "restore"
+            ) : (
+              <Link href={`/runs?cascade=${encodeURIComponent(run.cascade)}`} className="text-sky-700 hover:underline dark:text-sky-400">
+                {run.cascade}
+              </Link>
+            )}
           </h1>
           <Badge status={run.status} />
           <span className="text-sm text-zinc-500">{run.trigger}</span>

@@ -12,7 +12,18 @@ import {
 import { ApiClient, ClientError, resolveConnection } from "./client.js";
 import { logLine, RUN_EXIT, stepLine } from "./output.js";
 import { VERSION } from "./version.js";
-import { cancelRun, listDir, listRepos, listRuns, listSnapshots, runRemote, showLog, showRun, status } from "./remote.js";
+import {
+  cancelRun,
+  listDir,
+  listRepos,
+  listRuns,
+  listSnapshots,
+  restoreRemote,
+  runRemote,
+  showLog,
+  showRun,
+  status,
+} from "./remote.js";
 
 const HELP = `rescade - cascades of restic commands
 
@@ -30,6 +41,9 @@ Usage:
   rescade repos                       repo state and who holds them
   rescade snapshots <repo>            snapshots of a repo, newest first
   rescade ls <repo> <snapshot> [path] what is in a directory of a snapshot (default /)
+  rescade restore <repo> <snapshot> [path...] [--detach]
+                                      restore the snapshot, or only these paths, into the daemon's
+                                      restore directory: <restore-dir>/<short id>/<full path>
 
 Options:
   --config-dir <path>   directory with *.yaml files, or a single file
@@ -38,7 +52,7 @@ Options:
   --json                machine-readable output
   --local               run: run the cascade in this process, without the daemon
   --restic <path>       run --local: restic binary (default: $RESCADE_RESTIC, then restic)
-  --detach              run: only start the run and print its id
+  --detach              run, restore: only start the run and print its id
   --url <url>           the daemon (default: $RESCADE_URL, then http://127.0.0.1:8765)
   --token-file <path>   API token (default: $RESCADE_TOKEN, $RESCADE_TOKEN_FILE,
                         then ~/.config/rescade/token)
@@ -53,6 +67,7 @@ Exit codes:
   validate  0 valid, 1 config has errors, 2 bad usage
   run       0 success, 3 warning, 1 failed, interrupted or config errors, 130 cancelled,
             75 skipped (repos busy or the cascade already running), 2 bad usage
+  restore   0 success, 1 failed or interrupted, 130 cancelled, 2 bad usage
   others    0 done, 1 error from the daemon or no connection, 2 bad usage
 `;
 
@@ -212,6 +227,40 @@ async function run(argv: string[]): Promise<number> {
   return RUN_EXIT[result.status];
 }
 
+async function restore(argv: string[]): Promise<number> {
+  let parsed;
+  try {
+    parsed = parseArgs({
+      args: argv,
+      options: {
+        detach: { type: "boolean", default: false },
+        json: { type: "boolean", default: false },
+        ...CONNECTION_OPTIONS,
+        help: { type: "boolean", short: "h", default: false },
+      },
+      allowPositionals: true,
+    });
+  } catch (e) {
+    return usageError(e);
+  }
+  const { values, positionals } = parsed;
+  if (values.help) {
+    process.stdout.write(HELP);
+    return 0;
+  }
+  const [repo, snapshot, ...paths] = positionals;
+  if (repo === undefined || snapshot === undefined) {
+    console.error("rescade: restore needs a repo, a snapshot id and optionally paths");
+    return 2;
+  }
+  const relative = paths.find((p) => !p.startsWith("/"));
+  if (relative !== undefined) {
+    console.error(`rescade: paths to restore are absolute paths in the snapshot, got "${relative}"`);
+    return 2;
+  }
+  return restoreRemote(await connect(values), repo, snapshot, paths, values.detach, values.json);
+}
+
 const CONNECTION_OPTIONS = {
   url: { type: "string" },
   "token-file": { type: "string" },
@@ -319,6 +368,8 @@ async function main(argv: string[]): Promise<number> {
       return validate(rest);
     case "run":
       return run(rest);
+    case "restore":
+      return restore(rest);
     case "status":
     case "runs":
     case "show":

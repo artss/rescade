@@ -1,11 +1,21 @@
 import type { Config } from "../config/types.js";
 import type { EnsureResult } from "../restic/ensure.js";
 import type { LogRecord, RunRecord, StepRecord, Store, Trigger } from "../store/store.js";
-import { runCascade, type RunEvent, type RunOptions, type RunResult } from "./cascade.js";
-import { RepoLocks } from "./locks.js";
+import {
+  restoreStep,
+  runCascade,
+  runRestore,
+  type RestoreRequest,
+  type RunEvent,
+  type RunOptions,
+  type RunResult,
+} from "./cascade.js";
+import { RepoLocks, type AcquireOptions, type LockOwner } from "./locks.js";
 
 export interface RunnerOptions extends Pick<RunOptions, "restic" | "env" | "killGraceMs" | "repoCheckTimeoutMs"> {
   store: Store;
+  /** Where snapshots are restored (`<restoreDir>/<short id>`); without it `restore` is refused. */
+  restoreDir?: string;
 }
 
 /** What the runner reports as runs go on; the same changes are written to the store. */
@@ -28,7 +38,8 @@ interface Active {
 export class Runner {
   readonly locks = new RepoLocks();
   private config: Config;
-  private readonly active = new Map<string, Active>();
+  /** By run id. */
+  private readonly active = new Map<number, Active>();
   private readonly listeners = new Set<(event: RunnerEvent) => void>();
   private stopping = false;
 
@@ -47,6 +58,11 @@ export class Runner {
   subscribe(listener: (event: RunnerEvent) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  /** Where snapshots are restored; undefined = restore is off. */
+  get restoreDir(): string | undefined {
+    return this.options.restoreDir;
   }
 
   /** True once `stop` was called: new runs are refused. */
@@ -71,7 +87,7 @@ export class Runner {
     const { store } = this.options;
     const now = Date.now();
 
-    const previous = this.active.get(cascadeName);
+    const previous = [...this.active.values()].find((a) => a.run.cascade === cascadeName);
     if (previous) {
       const run = store.insertRun({
         cascade: cascadeName,
@@ -86,10 +102,56 @@ export class Runner {
     }
 
     const run = store.insertRun({ cascade: cascadeName, trigger, status: "running", startedAt: now });
-    // before runCascade: a step without repos starts synchronously
+    return this.start(
+      run,
+      (index) => {
+        const s = cascade.steps[index]!;
+        return { type: s.type, ...(s.type === "backup" ? { repo: s.repo } : {}) };
+      },
+      (options) =>
+        runCascade(config, cascadeName, {
+          ...options,
+          lock: (repos, wait) => options.acquire(repos, { wait: cascade.onBusy === "wait", timeoutMs: cascade.waitTimeoutMs, ...wait }),
+        }),
+    );
+  }
+
+  /**
+   * Starts restoring a snapshot (or some of its paths) into `<restoreDir>/<short id>` and returns the run's record.
+   * The run waits for the repo's mutex as long as it takes, so prune and backup wait for the restore.
+   */
+  restore(request: RestoreRequest): RunRecord {
+    const config = this.config;
+    if (this.stopping) throw new Error("the runner is stopping");
+    if (this.options.restoreDir === undefined) throw new Error("restore is not enabled: no restore directory is set");
+    if (!config.repos[request.repo]) throw new Error(`unknown repo "${request.repo}"`);
+    const step = restoreStep(request, this.options.restoreDir);
+    const run = this.options.store.insertRun({
+      restore: { repo: step.repo, snapshot: step.snapshot, paths: step.paths, target: step.target },
+      trigger: "manual",
+      status: "running",
+      startedAt: Date.now(),
+    });
+    return this.start(
+      run,
+      () => ({ type: "restore", repo: step.repo }),
+      (options) => runRestore(config, step, { ...options, lock: (repos, wait) => options.acquire(repos, { wait: true, ...wait }) }),
+    );
+  }
+
+  /** Follows a run that was just inserted as `running`: keeps its record and steps up to date and reports them. */
+  private start(
+    run: RunRecord,
+    stepInfo: (index: number) => Pick<StepRecord, "type" | "repo">,
+    exec: (
+      options: RunOptions & { acquire: (repos: string[], options: AcquireOptions) => ReturnType<RepoLocks["acquire"]> },
+    ) => Promise<RunResult>,
+  ): RunRecord {
+    const { store } = this.options;
+    // before exec: a step without repos starts synchronously
     this.emit({ kind: "run", run: { ...run } });
     const controller = new AbortController();
-    const owner = { runId: run.id, cascade: cascadeName };
+    const owner: LockOwner = { runId: run.id, ...(run.cascade === undefined ? {} : { cascade: run.cascade }) };
     const setStatus = (status: RunRecord["status"], reason?: string, finishedAt?: number) => {
       run.status = status;
       if (reason === undefined) delete run.reason;
@@ -99,10 +161,7 @@ export class Runner {
       this.emit({ kind: "run", run: { ...run } });
     };
 
-    const step = (index: number, label: string) => {
-      const s = cascade.steps[index]!;
-      return { runId: run.id, index, type: s.type, label, ...(s.type === "backup" ? { repo: s.repo } : {}) };
-    };
+    const step = (index: number, label: string) => ({ runId: run.id, index, label, ...stepInfo(index) });
     const onEvent = (e: RunEvent) => {
       switch (e.kind) {
         case "step-wait":
@@ -130,7 +189,7 @@ export class Runner {
       this.stopping && result.status === "cancelled"
         ? setStatus("interrupted", "the daemon stopped during the run", result.finishedAt)
         : setStatus(result.status, result.reason, result.finishedAt);
-    const done = runCascade(config, cascadeName, {
+    const done = exec({
       restic: this.options.restic,
       env: this.options.env,
       killGraceMs: this.options.killGraceMs,
@@ -138,30 +197,20 @@ export class Runner {
       signal: controller.signal,
       onEvent,
       onRepoChecked: (repo, result) => this.emit({ kind: "repo", repo, result, at: Date.now() }),
-      lock: (repos, wait) =>
-        this.locks.acquire(repos, owner, {
-          wait: cascade.onBusy === "wait",
-          timeoutMs: cascade.waitTimeoutMs,
-          signal: wait.signal,
-          onWait: wait.onWait,
-        }),
+      acquire: (repos, options) => this.locks.acquire(repos, owner, options),
     })
       .then(finish, (e: unknown) => setStatus("failed", e instanceof Error ? e.message : String(e), Date.now()))
-      .finally(() => this.active.delete(cascadeName));
+      .finally(() => this.active.delete(run.id));
 
-    this.active.set(cascadeName, { run, controller, done });
+    this.active.set(run.id, { run, controller, done });
     return { ...run };
   }
 
   /** Cancels a run in progress (also one waiting for repos). False if it is not in progress. */
   cancel(runId: number): boolean {
-    for (const a of this.active.values()) {
-      if (a.run.id === runId) {
-        a.controller.abort();
-        return true;
-      }
-    }
-    return false;
+    const a = this.active.get(runId);
+    a?.controller.abort();
+    return a !== undefined;
   }
 
   /**

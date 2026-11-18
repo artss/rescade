@@ -46,8 +46,8 @@ export class ApiClient {
     return this.request<T>("GET", pathAndQuery);
   }
 
-  post<T>(pathAndQuery: string): Promise<T> {
-    return this.request<T>("POST", pathAndQuery);
+  post<T>(pathAndQuery: string, body?: unknown): Promise<T> {
+    return this.request<T>("POST", pathAndQuery, body);
   }
 
   /** Opens the event stream; resolves once the daemon has accepted it, so no later event is missed. */
@@ -57,18 +57,21 @@ export class ApiClient {
     return parseEvents(res.body!, signal);
   }
 
-  private async request<T>(method: string, pathAndQuery: string): Promise<T> {
-    const res = await this.fetch(method, pathAndQuery);
+  private async request<T>(method: string, pathAndQuery: string, body?: unknown): Promise<T> {
+    const res = await this.fetch(method, pathAndQuery, undefined, body);
     await this.check(res);
     return (await res.json()) as T;
   }
 
-  private async fetch(method: string, pathAndQuery: string, signal?: AbortSignal): Promise<Response> {
+  private async fetch(method: string, pathAndQuery: string, signal?: AbortSignal, body?: unknown): Promise<Response> {
+    const headers: Record<string, string> = { authorization: `Bearer ${this.conn.token}` };
+    if (body !== undefined) headers["content-type"] = "application/json";
     try {
       return await fetch(`${this.conn.url}/api${pathAndQuery}`, {
         method,
-        headers: { authorization: `Bearer ${this.conn.token}` },
+        headers,
         signal,
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
     } catch (e) {
       const cause = (e as { cause?: { code?: string; message?: string } }).cause;

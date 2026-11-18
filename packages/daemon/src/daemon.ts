@@ -117,7 +117,9 @@ export async function startDaemon(settings: Settings, logger: Logger, options: D
       killGraceMs: options.killGraceMs,
       repoCheckTimeoutMs: settings.repoCheckTimeoutMs,
       store,
+      ...(settings.restoreDir === undefined ? {} : { restoreDir: settings.restoreDir }),
     });
+    if (settings.restoreDir !== undefined) logger.info({ dir: settings.restoreDir }, "restore is on");
     runner.subscribe((e) => {
       if (e.kind === "repo") repos.update(e.repo, e.result, e.at);
       logEvent(logger, e);
@@ -213,8 +215,9 @@ async function readConfig(dir: string, logger: Logger): Promise<{ config?: Confi
 function logEvent(logger: Logger, e: RunnerEvent): void {
   switch (e.kind) {
     case "run": {
-      const { id: run, cascade, trigger, status, reason } = e.run;
-      const fields = { run, cascade, trigger, status, ...(reason === undefined ? {} : { reason }) };
+      const { id: run, cascade, restore, trigger, status, reason } = e.run;
+      const what = restore === undefined ? { cascade } : { restore: restore.target };
+      const fields = { run, ...what, trigger, status, ...(reason === undefined ? {} : { reason }) };
       if (status === "failed" || status === "interrupted") logger.error(fields, `run ${status}`);
       else if (status === "warning" || status === "skipped" || status === "cancelled") logger.warn(fields, `run ${status}`);
       else logger.info(fields, `run ${status}`);

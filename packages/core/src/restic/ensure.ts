@@ -34,16 +34,18 @@ const lastLine = (r: ProcessResult): string => failureReason(r.stderrTail) ?? "n
  * Makes sure the repo exists: `restic cat config`, and on exit code 10 `restic init`
  * (from the `from` repo with its chunker parameters, after ensuring that one first).
  * Any other failure is reported; init is never attempted unless restic said the repo does not exist.
+ * With `init: false` (restore) a missing repo is an error.
  */
 export function ensureRepo(
   ctx: ResticContext,
   name: string,
   log: (line: string) => void,
   memo: EnsureMemo = new Map(),
+  opts: { init?: boolean } = {},
 ): Promise<EnsureResult> {
   let result = memo.get(name);
   if (!result) {
-    result = ensure(ctx, name, log, memo).then((r) => {
+    result = ensure(ctx, name, log, memo, opts.init ?? true).then((r) => {
       if (r.ok || r.problem !== "cancelled") ctx.onRepoChecked?.(name, r);
       return r;
     });
@@ -57,6 +59,7 @@ async function ensure(
   name: string,
   log: (line: string) => void,
   memo: EnsureMemo,
+  init: boolean,
 ): Promise<EnsureResult> {
   const repo = ctx.repos[name];
   if (!repo) return { ok: false, problem: "error", reason: `unknown repo "${name}"` };
@@ -68,6 +71,7 @@ async function ensure(
     if (locks === "cancelled") return { ok: false, problem: "cancelled", reason: "cancelled" };
     return { ...first, initialized: false, locks };
   }
+  if (!init) return { ok: false, problem: "error", reason: `repo "${name}" does not exist` };
 
   if (repo.from !== undefined) {
     const source = await ensureRepo(ctx, repo.from, log, memo);
@@ -83,16 +87,16 @@ async function ensure(
     log(`repo "${name}" does not exist, initializing it`);
   }
 
-  const init = await execRestic(ctx, name, initArgs(repo.from !== undefined), {
+  const r = await execRestic(ctx, name, initArgs(repo.from !== undefined), {
     from: repo.from,
     onLine: (_stream, line) => log(line),
   });
-  if (init.cancelled) return { ok: false, problem: "cancelled", reason: "cancelled" };
-  if (init.code !== EXIT.ok) {
+  if (r.cancelled) return { ok: false, problem: "cancelled", reason: "cancelled" };
+  if (r.code !== EXIT.ok) {
     return {
       ok: false,
       problem: "init-failed",
-      reason: `restic init for repo "${name}" failed (${describeExit(init)}): ${lastLine(init)}`,
+      reason: `restic init for repo "${name}" failed (${describeExit(r)}): ${lastLine(r)}`,
     };
   }
 

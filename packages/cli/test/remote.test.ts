@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
-import { writeFile } from "node:fs/promises";
+import { existsSync, readFileSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pino } from "pino";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -42,8 +43,10 @@ cascades:
       - run: { command: ${hold}, lock: [b] }
 `,
   );
+  await mkdir(path.join(fake.dir, "restore"));
   daemon = await startDaemon(
     {
+      restoreDir: path.join(fake.dir, "restore"),
       host: "127.0.0.1",
       port: 0,
       configDir: configFile,
@@ -204,6 +207,45 @@ describe("the CLI through the daemon", () => {
     expect(missing.code).toBe(1);
     expect(missing.stderr).toBe("rescade: no /nope in snapshot cccccccc\n");
     expect((await cli(["ls", "a"])).stderr).toBe("rescade: ls needs a repo, a snapshot id and optionally a path\n");
+  });
+
+  it("restores a snapshot into the daemon's restore directory and follows the run", async () => {
+    const id = "d".repeat(64);
+    fake.writeSnapshots("/r/a", [{ time: "2026-11-01T10:00:00Z", paths: ["/host"], id, short_id: id.slice(0, 8) }], {
+      [id]: [
+        { name: "host", type: "dir", path: "/host" },
+        { name: "etc", type: "dir", path: "/host/etc" },
+        { name: "smb.conf", type: "file", path: "/host/etc/smb.conf" },
+        { name: "notes", type: "file", path: "/host/notes" },
+      ],
+    });
+    const target = path.join(fake.dir, "restore", "dddddddd");
+    const r = await cli(["restore", "a", "dddddddd", "/host/etc"]);
+    expect(r.stderr).toBe("");
+    expect(r.code).toBe(0);
+    const lines = r.stdout.trim().split("\n");
+    expect(lines[0]).toMatch(new RegExp(String.raw`^run \d+ \(restore of dddddddd from "a" into ${target}\) started$`));
+    expect(lines).toContain(`==> [1/1] restore dddddddd (/host/etc) from a -> ${target}`);
+    expect(lines).toContain("    restored 2 files and directories (18 B)");
+    expect(lines.at(-1)).toMatch(new RegExp(String.raw`^restore into ${target}: success in `));
+    expect(readFileSync(path.join(target, "host/etc/smb.conf"), "utf8")).toBe("/host/etc/smb.conf");
+    expect(existsSync(path.join(target, "host/notes"))).toBe(false);
+
+    const runs = await cli(["runs"]);
+    expect(runs.stdout).toMatch(/\n\d+ +restore +manual +success /);
+
+    const detached = await cli(["restore", "a", "dddddddd", "--detach"]);
+    expect(detached.stdout).toMatch(new RegExp(String.raw`^run \d+ started: restoring into ${target}\n$`));
+
+    const missing = await cli(["restore", "a", "dddddddd", "/host/nope"]);
+    expect(missing.code).toBe(1);
+    expect(missing.stdout).toMatch(/restore into .*: failed in .* \(.*snapshot dddddddd has none of the given paths\)\n$/);
+
+    expect((await cli(["restore", "a", "dddddddd", "etc"])).stderr).toBe(
+      'rescade: paths to restore are absolute paths in the snapshot, got "etc"\n',
+    );
+    expect((await cli(["restore", "a"])).code).toBe(2);
+    expect((await cli(["restore", "nope", "dddddddd"])).stderr).toBe('rescade: unknown repo "nope"\n');
   });
 
   it("cancels the followed run on Ctrl+C", async () => {

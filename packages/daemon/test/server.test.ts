@@ -22,6 +22,14 @@ const run: RunRecord = {
   startedAt: 1000,
   finishedAt: 2000,
 };
+const restoreRun: RunRecord = {
+  id: 8,
+  restore: { repo: "a", snapshot: "c8b33f97", paths: ["/home/f"], target: "/restore/c8b33f97" },
+  trigger: "manual",
+  status: "running",
+  startedAt: 3000,
+};
+const restoreRequests: unknown[] = [];
 const step: StepRecord = {
   runId: 7,
   index: 0,
@@ -128,6 +136,11 @@ cascades:
     runner: {
       running: () => [run],
       trigger: () => run,
+      restore: (request: unknown) => {
+        restoreRequests.push(request);
+        return restoreRun;
+      },
+      restoreDir: "/restore",
       cancel: () => true,
       isStopping: false,
       locks: { holder: (repo: string) => (repo === "b" ? { runId: 7, cascade: "daily" } : undefined) },
@@ -157,9 +170,14 @@ afterAll(async () => {
   await fake.remove();
 });
 
-async function call(method: "GET" | "POST", url: string, headers: Record<string, string> = {}) {
+async function call(method: "GET" | "POST", url: string, headers: Record<string, string> = {}, payload?: object) {
   serialized = undefined;
-  const res = await app.inject({ method, url, headers: { host: HOST, authorization: `Bearer ${TOKEN}`, ...headers } });
+  const res = await app.inject({
+    method,
+    url,
+    headers: { host: HOST, authorization: `Bearer ${TOKEN}`, ...headers },
+    ...(payload === undefined ? {} : { payload }),
+  });
   return { status: res.statusCode, body: res.json() };
 }
 
@@ -176,6 +194,7 @@ describe("response schemas", () => {
     ["GET", "/api/summary", 200],
     ["GET", "/api/repos/a/snapshots", 200],
     ["GET", `/api/repos/a/snapshots/${SNAP}/ls?path=/home`, 200],
+    ["POST", "/api/repos/a/snapshots/c8b33f97/restore", 202],
   ] as const)("%s %s keeps every field", async (method, url, status) => {
     const res = await call(method, url);
     expect(res.status).toBe(status);
@@ -320,6 +339,51 @@ describe("snapshots", () => {
   });
 });
 
+describe("restore", () => {
+  const url = "/api/repos/a/snapshots/c8b33f97/restore";
+  const post = (body?: object, to = url) => call("POST", to, {}, body);
+
+  it("starts a restore of the whole snapshot or of some paths", async () => {
+    restoreRequests.length = 0;
+    expect(await post()).toEqual({ status: 202, body: restoreRun });
+    expect(await post({})).toMatchObject({ status: 202 });
+    expect(await post({ paths: ["/home/f", "/home/a b[1]"] })).toMatchObject({ status: 202 });
+    expect(restoreRequests).toEqual([
+      { repo: "a", snapshot: "c8b33f97", paths: [] },
+      { repo: "a", snapshot: "c8b33f97", paths: [] },
+      { repo: "a", snapshot: "c8b33f97", paths: ["/home/f", "/home/a b[1]"] },
+    ]);
+  });
+
+  it("rejects what it cannot restore", async () => {
+    restoreRequests.length = 0;
+    expect((await post({ paths: ["home/f"] })).status).toBe(400);
+    expect((await post({ paths: ["/home/\u0000x"] })).status).toBe(400);
+    expect((await post({ paths: Array.from({ length: 1001 }, (_, i) => `/f${i}`) })).status).toBe(400);
+    expect((await post({}, "/api/repos/a/snapshots/--help/restore")).status).toBe(400);
+    expect(await post({}, "/api/repos/nope/snapshots/c8b33f97/restore")).toEqual({
+      status: 404,
+      body: { error: 'unknown repo "nope"' },
+    });
+    expect(restoreRequests).toEqual([]);
+
+    // Fastify drops unknown fields: the target is the daemon's to choose
+    expect((await post({ target: "/elsewhere" })).status).toBe(202);
+    expect(restoreRequests).toEqual([{ repo: "a", snapshot: "c8b33f97", paths: [] }]);
+  });
+
+  it("answers 409 when the daemon has no restore directory", async () => {
+    const off = await buildServer({ ...deps, runner: { ...deps.runner, restoreDir: undefined } as unknown as ServerDeps["runner"] });
+    try {
+      const res = await off.inject({ method: "POST", url, headers: { host: HOST, authorization: `Bearer ${TOKEN}` } });
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error).toMatch(/--restore-dir or RESCADE_RESTORE_DIR/);
+    } finally {
+      await off.close();
+    }
+  });
+});
+
 describe("web UI", () => {
   let web: FastifyInstance;
   beforeAll(async () => {
@@ -421,6 +485,7 @@ describe("OpenAPI document", () => {
       "GET /api/status",
       "GET /api/summary",
       "POST /api/cascades/{name}/run",
+      "POST /api/repos/{name}/snapshots/{id}/restore",
       "POST /api/runs/{id}/cancel",
     ]);
     for (const { op, codes } of operations) {

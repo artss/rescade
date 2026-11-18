@@ -1,3 +1,4 @@
+import path from "node:path";
 import { formatDuration } from "../config/schema.js";
 import type { Config, RunStep, Step } from "../config/types.js";
 import { describeExit, ensureRepo, type EnsureMemo, type EnsureResult } from "../restic/ensure.js";
@@ -11,6 +12,7 @@ import {
   failureReason,
   forgetArgs,
   pruneArgs,
+  restoreArgs,
   type ResticContext,
 } from "../restic/restic.js";
 import type { LockResult } from "./locks.js";
@@ -19,9 +21,31 @@ export type StepStatus = "success" | "warning" | "failed" | "cancelled" | "skipp
 /** `skipped`: a step found its repos busy (`on-busy: skip`, or `wait` ran out of time). */
 export type RunStatus = "success" | "warning" | "failed" | "cancelled" | "skipped";
 
+/** A restore is run like a cascade of this one step; it is not written in the config. */
+export interface RestoreStep {
+  type: "restore";
+  repo: string;
+  /** The snapshot id as given: hex, at least 8 characters. */
+  snapshot: string;
+  /** Absolute paths to restore; empty = the whole snapshot. */
+  paths: string[];
+  /** The directory restic restores into. */
+  target: string;
+}
+
+export type StepType = Step["type"] | "restore";
+
+/** What to restore; the target directory comes from the daemon's settings. */
+export interface RestoreRequest {
+  repo: string;
+  snapshot: string;
+  /** Absolute paths; empty or absent = the whole snapshot. */
+  paths?: string[];
+}
+
 export interface StepResult {
   index: number;
-  type: Step["type"];
+  type: StepType;
   label: string;
   status: StepStatus;
   /** Exit code of the step's main process, when it ran to the end. */
@@ -37,7 +61,8 @@ export interface StepResult {
 }
 
 export interface RunResult {
-  cascade: string;
+  /** Absent for a restore. */
+  cascade?: string;
   status: RunStatus;
   startedAt: number;
   finishedAt: number;
@@ -76,7 +101,7 @@ export interface RunOptions {
 }
 
 /** Repos whose mutex a step holds while it runs. */
-export function stepRepos(step: Step): string[] {
+export function stepRepos(step: Step | RestoreStep): string[] {
   switch (step.type) {
     case "copy":
       return [step.from, step.to];
@@ -88,7 +113,11 @@ export function stepRepos(step: Step): string[] {
 }
 
 /** A short human description of a step, e.g. "copy system-local -> system-i1". */
-export function describeStep(step: Step): string {
+export function describeStep(step: Step | RestoreStep): string {
+  if (step.type === "restore") {
+    const what = step.paths.length === 0 ? "" : ` (${step.paths.length === 1 ? step.paths[0] : `${step.paths.length} paths`})`;
+    return `restore ${step.snapshot.slice(0, 8)}${what} from ${step.repo} -> ${step.target}`;
+  }
   if (step.name !== undefined) return step.name;
   switch (step.type) {
     case "backup":
@@ -108,7 +137,34 @@ export function describeStep(step: Step): string {
 export async function runCascade(config: Config, cascadeName: string, options: RunOptions): Promise<RunResult> {
   const cascade = config.cascades[cascadeName];
   if (!cascade) throw new Error(`unknown cascade "${cascadeName}"`);
+  return { cascade: cascadeName, ...(await runSteps(config, cascade.steps, options)) };
+}
 
+/** Paths one restore may name; each becomes an argument of restic. */
+export const MAX_RESTORE_PATHS = 1000;
+
+/** Where a snapshot is restored: `<restoreDir>/<short id>`, with the snapshot's full paths below it. */
+export const restoreTarget = (restoreDir: string, snapshot: string): string => path.join(restoreDir, snapshot.slice(0, 8));
+
+/** The step a restore request becomes. Paths are normalized; "/" among them means the whole snapshot. */
+export function restoreStep(request: RestoreRequest, restoreDir: string): RestoreStep {
+  const paths = [...new Set((request.paths ?? []).map((p) => path.posix.normalize(p).replace(/(.)\/$/, "$1")))];
+  return {
+    type: "restore",
+    repo: request.repo,
+    snapshot: request.snapshot,
+    paths: paths.includes("/") ? [] : paths,
+    target: restoreTarget(restoreDir, request.snapshot),
+  };
+}
+
+/** Restores a snapshot (or some of its paths): a run of one step that takes the repo's mutex. */
+export function runRestore(config: Config, step: RestoreStep, options: RunOptions): Promise<RunResult> {
+  if (!config.repos[step.repo]) throw new Error(`unknown repo "${step.repo}"`);
+  return runSteps(config, [step], options);
+}
+
+async function runSteps(config: Config, steps: Array<Step | RestoreStep>, options: RunOptions): Promise<RunResult> {
   const emit = options.onEvent ?? (() => {});
   const ctx: ResticContext = {
     binary: options.restic,
@@ -124,7 +180,7 @@ export async function runCascade(config: Config, cascadeName: string, options: R
   let stopped = false;
   let reason: string | undefined;
 
-  for (const [index, step] of cascade.steps.entries()) {
+  for (const [index, step] of steps.entries()) {
     const label = describeStep(step);
     if (stopped || options.signal?.aborted) {
       const result: StepResult = { index, type: step.type, label, status: "skipped" };
@@ -179,7 +235,6 @@ export async function runCascade(config: Config, cascadeName: string, options: R
   }
 
   return {
-    cascade: cascadeName,
     status: overall(results),
     startedAt,
     finishedAt: Date.now(),
@@ -201,7 +256,7 @@ function overall(steps: StepResult[]): RunStatus {
 type Outcome = Pick<StepResult, "status" | "exitCode" | "reason" | "stderrTail" | "summary">;
 
 async function runStep(
-  step: Step,
+  step: Step | RestoreStep,
   config: Config,
   ctx: ResticContext,
   options: RunOptions,
@@ -209,7 +264,7 @@ async function runStep(
 ): Promise<Outcome> {
   const memo: EnsureMemo = new Map();
   const info = (line: string) => log("info", line);
-  const ensure = (repo: string) => ensureRepo(ctx, repo, info, memo);
+  const ensure = (repo: string, init = true) => ensureRepo(ctx, repo, info, memo, { init });
   const passLines = { onLine: log };
 
   switch (step.type) {
@@ -218,7 +273,7 @@ async function runStep(
       if (!ready.ok) return notReady(ready);
       const set = config.sets[step.set];
       if (!set) return { status: "failed", reason: `unknown set "${step.set}"` };
-      const output = backupOutput(log);
+      const output = jsonOutput(log, backupSummary);
       const r = await execRestic(ctx, step.repo, backupArgs(set, step), { onLine: output.onLine });
       const summary = output.summary();
       if (r.code === EXIT.partial && !r.cancelled) {
@@ -230,7 +285,27 @@ async function runStep(
         };
       }
       // with --json, errors on stderr are JSON too (the last one is an exit_error)
-      return { ...fromProcess({ ...r, stderrTail: r.stderrTail.map(readableBackupLine) }, "restic backup"), summary };
+      return { ...fromProcess({ ...r, stderrTail: r.stderrTail.map((l) => readableJsonLine(l)) }, "restic backup"), summary };
+    }
+    case "restore": {
+      // restoring from a repo that is not there must not create it
+      const ready = await ensure(step.repo, false);
+      if (!ready.ok) return notReady(ready);
+      const output = jsonOutput(log, restoreSummary);
+      const r = await execRestic(ctx, step.repo, restoreArgs(step.snapshot, step.target, step.paths), {
+        onLine: output.onLine,
+      });
+      const summary = output.summary();
+      const outcome = {
+        ...fromProcess({ ...r, stderrTail: r.stderrTail.map((l) => readableJsonLine(l)) }, "restic restore"),
+        ...(summary === undefined ? {} : { summary }),
+      };
+      // restic restores nothing, without an error, when the snapshot has none of the paths
+      const touched = Number(summary?.files_restored ?? 0) + Number(summary?.files_skipped ?? 0);
+      if (outcome.status === "success" && step.paths.length > 0 && touched === 0) {
+        return { ...outcome, status: "failed", reason: `snapshot ${step.snapshot.slice(0, 8)} has none of the given paths` };
+      }
+      return outcome;
     }
     case "retain": {
       const retention = config.repos[step.repo]?.retention;
@@ -321,10 +396,10 @@ function runCommand(step: RunStep, options: RunOptions, log: (stream: LogStream,
 }
 
 /**
- * `restic backup --json` prints progress, errors and a summary as JSON lines.
+ * `restic backup --json` and `restic restore --json` print progress, errors and a summary as JSON lines.
  * Progress is dropped, errors and the summary become readable log lines.
  */
-function backupOutput(log: (stream: LogStream, line: string) => void) {
+function jsonOutput(log: (stream: LogStream, line: string) => void, describeSummary: (s: Summary) => string) {
   let summary: Record<string, unknown> | undefined;
   const onLine = (stream: "stdout" | "stderr", line: string) => {
     const msg = parseJsonLine(line);
@@ -334,10 +409,10 @@ function backupOutput(log: (stream: LogStream, line: string) => void) {
         return;
       case "summary":
         summary = msg;
-        log("stdout", readableBackupLine(line));
+        log("stdout", describeSummary(msg as Summary));
         return;
       default:
-        log(stream, readableBackupLine(line));
+        log(stream, readableJsonLine(line));
     }
   };
   return { onLine, summary: () => summary };
@@ -352,18 +427,29 @@ function parseJsonLine(line: string): Record<string, unknown> | undefined {
   }
 }
 
-/** One line of `restic backup --json` output as text; lines that are not JSON stay as they are. */
-function readableBackupLine(line: string): string {
+type Summary = Record<string, number | string | undefined>;
+
+function backupSummary(s: Summary): string {
+  const id = typeof s.snapshot_id === "string" ? s.snapshot_id.slice(0, 8) : "?";
+  return (
+    `snapshot ${id} saved: ${s.files_new ?? 0} new, ${s.files_changed ?? 0} changed, ` +
+    `${s.files_unmodified ?? 0} unmodified files, ${formatBytes(Number(s.data_added ?? 0))} added`
+  );
+}
+
+/** `files_restored` counts directories too; files already in place are `files_skipped`. */
+function restoreSummary(s: Summary): string {
+  const skipped = Number(s.files_skipped ?? 0);
+  return (
+    `restored ${s.files_restored ?? 0} files and directories (${formatBytes(Number(s.bytes_restored ?? 0))})` +
+    (skipped > 0 ? `, ${skipped} already in place (${formatBytes(Number(s.bytes_skipped ?? 0))})` : "")
+  );
+}
+
+/** One line of restic's `--json` output as text; lines that are not JSON stay as they are. */
+function readableJsonLine(line: string): string {
   const msg = parseJsonLine(line);
   switch (msg?.message_type) {
-    case "summary": {
-      const s = msg as Record<string, number | string | undefined>;
-      const id = typeof s.snapshot_id === "string" ? s.snapshot_id.slice(0, 8) : "?";
-      return (
-        `snapshot ${id} saved: ${s.files_new ?? 0} new, ${s.files_changed ?? 0} changed, ` +
-        `${s.files_unmodified ?? 0} unmodified files, ${formatBytes(Number(s.data_added ?? 0))} added`
-      );
-    }
     case "error": {
       const error = msg.error as { message?: string } | undefined;
       const item = typeof msg.item === "string" ? `${msg.item}: ` : "";

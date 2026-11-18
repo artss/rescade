@@ -19,6 +19,8 @@ services:
       - "127.0.0.1:8765:8765"
     environment:
       TZ: Europe/Berlin
+      # `rescade restore <repo> <id> [path...]` writes to /restore/<short id>/<full path in the snapshot>
+      RESCADE_RESTORE_DIR: /restore
       # optional: accept only these Host values ("host:port" on that port, "host" on any)
       # RESCADE_ALLOWED_HOSTS: backup.lan, backup.example.com
     env_file: rescade.env
@@ -43,6 +45,8 @@ services:
       # A /host prefix is a safe choice; restore with `restic restore <id>:/host/home --target /home`.
       - /home:/host/home:ro
       - /etc:/host/etc:ro
+      # where `rescade restore` puts files (writable; created if missing)
+      - /srv/restore:/restore
 
 secrets:
   rescade_token:
