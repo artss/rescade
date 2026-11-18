@@ -18,7 +18,7 @@ export function CascadesPage() {
   if (error) return <ErrorBox error={error} />;
   if (!data) return <Loading />;
   if (data.length === 0) return <p className="text-sm text-zinc-500">The config has no cascades.</p>;
-  return <GroupedList items={data} groupOf={(c) => c.group} keyOf={(c) => c.name} render={(c) => <CascadeCard cascade={c} />} />;
+  return <GroupedList list="cascades" items={data} groupOf={(c) => c.group} keyOf={(c) => c.name} render={(c) => <CascadeCard cascade={c} />} />;
 }
 
 function CascadeCard({ cascade: c }: { cascade: CascadeView }) {

@@ -81,6 +81,25 @@ describe("cascades and runs", () => {
     expect(screen.getByRole("heading", { name: "daily" })).toBeDefined();
   });
 
+  it("remembers collapsed groups across reloads, separately for each list", async () => {
+    const first = renderApp("/");
+    fireEvent.click(await screen.findByRole("button", { name: /regular/ }, wait));
+    expect(JSON.parse(localStorage.getItem("rescade.collapsed.cascades")!)).toEqual(["regular"]);
+    first.unmount();
+
+    const second = renderApp("/");
+    const toggle = await screen.findByRole("button", { name: /regular/ }, wait);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("heading", { name: "daily" })).toBeNull();
+    fireEvent.click(toggle);
+    expect(localStorage.getItem("rescade.collapsed.cascades")).toBeNull();
+    second.unmount();
+
+    localStorage.setItem("rescade.collapsed.cascades", "not json");
+    renderApp("/");
+    expect((await screen.findByRole("button", { name: /regular/ }, wait)).getAttribute("aria-expanded")).toBe("true");
+  });
+
   it("lists runs of a cascade and opens one", async () => {
     const run = await api<RunRecord>("POST", "/cascades/daily/run");
     renderApp("/");
