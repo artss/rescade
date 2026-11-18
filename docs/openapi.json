@@ -1343,6 +1343,7 @@
     "/api/runs": {
       "get": {
         "summary": "Runs, newest first",
+        "description": "The number of matching runs without `limit` and `offset` comes in the `x-total-count` header.",
         "parameters": [
           {
             "schema": {
@@ -1372,6 +1373,16 @@
             "name": "before",
             "required": false,
             "description": "Only runs with a smaller id, for paging"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "description": "Runs to skip, for numbered pages"
           }
         ],
         "responses": {

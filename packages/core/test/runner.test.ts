@@ -203,6 +203,9 @@ describe("store", () => {
     expect(store.runs().map((r) => r.id)).toEqual([4, 3, 2, 1]);
     expect(store.runs({ cascade: "a", limit: 2 }).map((r) => r.id)).toEqual([4, 3]);
     expect(store.runs({ cascade: "a", beforeId: 3 }).map((r) => r.id)).toEqual([1]);
+    expect(store.runs({ cascade: "a", limit: 2, offset: 1 }).map((r) => r.id)).toEqual([3, 1]);
+    expect(store.runs({ offset: 4 })).toEqual([]);
+    expect([store.countRuns(), store.countRuns({ cascade: "a" }), store.countRuns({ cascade: "c" })]).toEqual([4, 3, 0]);
     expect(store.run(99)).toBeUndefined();
   });
 

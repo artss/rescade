@@ -152,7 +152,7 @@ cascades:
       subscribe: () => () => {},
     },
     scheduler: { nextRun: () => new Date(5000) },
-    store: { runs: () => [run], run: () => ({ ...run, steps: [step] }), log: () => [log] },
+    store: { runs: () => [run], countRuns: () => 1, run: () => ({ ...run, steps: [step] }), log: () => [log] },
     repos,
     restic: { binary: FAKE_RESTIC, env: fake.env() },
     token: TOKEN,
