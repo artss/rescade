@@ -1,3 +1,6 @@
+// subpath imports: the "date-fns" index loads every function, ~1 s on each CLI start
+import { differenceInCalendarDays } from "date-fns/differenceInCalendarDays";
+import { format } from "date-fns/format";
 import { formatDuration, type RunState } from "@rescade/core";
 
 /** Exit codes of `rescade run` by the run's final status. */
@@ -30,11 +33,12 @@ export function logLine(stream: string, line: string): string {
   return `    ${stream === "info" ? "rescade: " : ""}${line}`;
 }
 
-/** Local time as "2026-11-15 18:30:05". */
-export function formatTime(ms: number): string {
-  const d = new Date(ms);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+const NEAR_DAYS: Record<number, string> = { [-1]: "yesterday", 0: "today", 1: "tomorrow" };
+
+/** Local time as "15 Nov 2026 at 18:30:05", or "today at 18:30:05" (also "yesterday", "tomorrow"). */
+export function formatTime(ms: number, now: number = Date.now()): string {
+  const day = NEAR_DAYS[differenceInCalendarDays(ms, now)] ?? format(ms, "dd MMM yyyy");
+  return `${day} at ${format(ms, "HH:mm:ss")}`;
 }
 
 /** "512 B", "1.5 KiB", "3.2 GiB". */

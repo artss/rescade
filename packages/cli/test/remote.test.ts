@@ -7,6 +7,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { startDaemon, type Daemon } from "../../daemon/src/daemon.js";
 import { FAKE_RESTIC, FakeState } from "../../core/test/helpers/fake.js";
 
+/** A time as `formatTime` prints it. */
+const T = String.raw`(?:today|yesterday|tomorrow|\d\d [A-Z][a-z]{2} \d{4}) at \d\d:\d\d:\d\d`;
+
 const ROOT = path.join(import.meta.dirname, "..", "..", "..");
 const CLI = path.join(ROOT, "packages", "cli", "src", "index.ts");
 const TOKEN = "cli-test-token-0123456789";
@@ -113,10 +116,10 @@ describe("the CLI through the daemon", () => {
     }
 
     const status = await cli(["status"]);
-    expect(status.stdout).toMatch(/^rescaded \S+, up since \d{4}-\d\d-\d\d \d\d:\d\d:\d\d\nconfig .+, loaded /);
+    expect(status.stdout).toMatch(new RegExp(String.raw`^rescaded \S+, up since ${T}\nconfig .+, loaded `));
     expect(status.stdout).not.toContain("failed");
     expect(status.stdout).not.toContain("differs from the daemon");
-    expect(status.stdout).toMatch(new RegExp(`^daily +success .* \\(run ${id}\\) +\\d{4}-\\d\\d-\\d\\d 03:00:00 +-$`, "m"));
+    expect(status.stdout).toMatch(new RegExp(String.raw`^daily +success .* \(run ${id}\) +(?:today|tomorrow) at 03:00:00 +-$`, "m"));
     expect(status.stdout).toMatch(/^slow +- +manual +-$/m);
 
     const show = await cli(["show", String(id)]);
@@ -145,7 +148,7 @@ describe("the CLI through the daemon", () => {
     expect(second.stderr).toMatch(new RegExp(`skipped: run ${id} of this cascade is still in progress`));
 
     const repos = await cli(["repos"]);
-    expect(repos.stdout).toMatch(new RegExp(`^b +ok +\\S+ \\S+ +run ${id} \\(slow\\) +0 +/r/b$`, "m"));
+    expect(repos.stdout).toMatch(new RegExp(String.raw`^b +ok +${T} +run ${id} \(slow\) +0 +/r/b$`, "m"));
 
     expect((await cli(["cancel", String(id)])).stdout).toBe(`cancelling run ${id}\n`);
     const again = await cli(["cancel", "999"]);
@@ -160,8 +163,8 @@ describe("the CLI through the daemon", () => {
     expect((await cli(["run", "daily"])).code).toBe(0);
 
     const repos = await cli(["repos"]);
-    expect(repos.stdout).toMatch(/^a +ok +\S+ \S+ +- +1 \(1 stale\) +\/r\/a$/m);
-    expect(repos.stdout).toMatch(/^a: lock abababab \(exclusive, stale\) by root@nas pid 42 at \S+ \S+$/m);
+    expect(repos.stdout).toMatch(new RegExp(String.raw`^a +ok +${T} +- +1 \(1 stale\) +/r/a$`, "m"));
+    expect(repos.stdout).toMatch(new RegExp(String.raw`^a: lock abababab \(exclusive, stale\) by root@nas pid 42 at ${T}$`, "m"));
     expect(repos.stdout).toContain('run "restic unlock"');
   });
 
@@ -190,11 +193,11 @@ describe("the CLI through the daemon", () => {
       },
     );
     const list = await cli(["snapshots", "a"]);
-    expect(list.stdout).toMatch(/^ID +TIME +HOST +SIZE +TAGS +PATHS\ncccccccc +\S+ \S+ +nas +3\.0 MiB +auto,daily +\/home\n$/);
+    expect(list.stdout).toMatch(new RegExp(String.raw`^ID +TIME +HOST +SIZE +TAGS +PATHS\ncccccccc +${T} +nas +3\.0 MiB +auto,daily +/home\n$`));
     expect((await cli(["snapshots", "b"])).stdout).toBe('no snapshots in "b"\n');
 
     const ls = await cli(["ls", "a", "cccccccc", "/home"]);
-    expect(ls.stdout).toMatch(/^drwx------ +\S+ \S+ +u\/\n-rw-r--r-- +10 B +\S+ \S+ +z\.txt\n$/);
+    expect(ls.stdout).toMatch(new RegExp(String.raw`^drwx------ +${T} +u/\n-rw-r--r-- +10 B +${T} +z\.txt\n$`));
     expect((await cli(["ls", "a", id])).stdout).toMatch(/^drwxr-xr-x +home\/\n$/);
 
     const missing = await cli(["ls", "a", id, "/nope"]);
