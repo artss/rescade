@@ -2,7 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, inject, it } from "vitest";
+import { describe, expect, inject, it, vi } from "vitest";
 import { App, createQueryClient } from "../src/App.js";
 import { ReloadBanner } from "../src/components/Layout.js";
 import { SnapshotTree } from "../src/components/SnapshotTree.js";
@@ -129,7 +129,14 @@ describe("cascades and runs", () => {
 
       renderApp(`/runs/${run.id}`);
       await waitFor(() => expect(screen.getByTestId("log").textContent).toContain("holding"), wait);
+      // declining the confirmation leaves the run alone
+      const confirm = vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true);
+      vi.stubGlobal("confirm", confirm);
       fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+      expect(confirm).toHaveBeenCalledWith(`Cancel run ${run.id}? The current step will be stopped.`);
+      expect((screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled).toBe(false);
+      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+      vi.unstubAllGlobals();
       await waitFor(() => expect(within(screen.getByRole("heading", { level: 1 }).parentElement!).getByText("cancelled")), wait);
       expect(screen.queryByRole("button", { name: /Cancel/ })).toBeNull();
 
