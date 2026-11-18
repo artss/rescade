@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -44,7 +44,7 @@ describe("daemon settings", () => {
     expect(warnings).toEqual([]);
   });
 
-  it("takes an existing restore directory, as an absolute path", async () => {
+  it("takes a restore directory as an absolute path, creating it when missing", async () => {
     const env = { RESCADE_TOKEN: "t" };
     expect(await readSettings([], env, () => {})).not.toHaveProperty("restoreDir");
     expect(await readSettings([], { ...env, RESCADE_RESTORE_DIR: dir }, () => {})).toMatchObject({ restoreDir: dir });
@@ -52,12 +52,18 @@ describe("daemon settings", () => {
     expect(await readSettings(["--restore-dir", rel], { ...env, RESCADE_RESTORE_DIR: "/nope" }, () => {})).toMatchObject({
       restoreDir: dir,
     });
-    await expect(readSettings(["--restore-dir", path.join(dir, "nope")], env, () => {})).rejects.toThrow(
-      `restore directory ${path.join(dir, "nope")} does not exist`,
-    );
+    const created = path.join(dir, "new", "restore");
+    expect(await readSettings(["--restore-dir", created], env, () => {})).toMatchObject({ restoreDir: created });
+    expect((await stat(created)).isDirectory()).toBe(true);
+    expect((await stat(created)).mode & 0o777).toBe(0o700);
+
     const file = await tokenFile("file", "x");
     await expect(readSettings([], { ...env, RESCADE_RESTORE_DIR: file }, () => {})).rejects.toThrow(
       `restore directory ${file} is not a directory`,
+    );
+    // a file on the way: the directory cannot be created
+    await expect(readSettings([], { ...env, RESCADE_RESTORE_DIR: path.join(file, "sub") }, () => {})).rejects.toThrow(
+      `cannot create restore directory ${path.join(file, "sub")} (ENOTDIR)`,
     );
   });
 

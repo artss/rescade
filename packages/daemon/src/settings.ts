@@ -1,4 +1,4 @@
-import { stat } from "node:fs/promises";
+import { mkdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { parseDuration, readTokenFile } from "@rescade/core";
@@ -41,7 +41,7 @@ Options (and the environment variables they override):
   --config-dir <path>   directory with *.yaml files, or a single file (RESCADE_CONFIG_DIR, default ./config)
   --data-dir <path>     run history (RESCADE_DATA_DIR, default ${DEFAULT_DATA_DIR})
   --restic <path>       restic binary (RESCADE_RESTIC, default restic)
-  --restore-dir <path>  an existing directory to restore snapshots into, as <path>/<short id>
+  --restore-dir <path>  directory to restore snapshots into, as <path>/<short id>; created if missing
                         (RESCADE_RESTORE_DIR; unset = restore is off)
   --token-file <path>   API token (RESCADE_TOKEN_FILE, default ${DEFAULT_TOKEN_FILE});
                         RESCADE_TOKEN gives the token itself
@@ -129,13 +129,23 @@ export async function readSettings(
   };
 }
 
-/** The restore directory must exist: a typo should not restore into a new directory nobody looks at. */
+/**
+ * The restore directory is created when missing, readable only by the daemon's user (restored files may be secrets).
+ * Failing to create it, or something else than a directory in its place, stops the start.
+ */
 async function restoreDir(dir: string | undefined): Promise<{ restoreDir?: string }> {
   if (dir === undefined) return {};
   const full = path.resolve(dir);
   const info = await stat(full).catch(() => undefined);
-  if (!info) throw new SettingsError(`restore directory ${full} does not exist`);
-  if (!info.isDirectory()) throw new SettingsError(`restore directory ${full} is not a directory`);
+  if (info && !info.isDirectory()) throw new SettingsError(`restore directory ${full} is not a directory`);
+  if (!info) {
+    try {
+      await mkdir(full, { recursive: true, mode: 0o700 });
+    } catch (e) {
+      const why = (e as NodeJS.ErrnoException).code ?? (e instanceof Error ? e.message : String(e));
+      throw new SettingsError(`cannot create restore directory ${full} (${why})`);
+    }
+  }
   return { restoreDir: full };
 }
 

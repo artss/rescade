@@ -30,7 +30,7 @@ progress end as `interrupted`. Logs are JSON lines on stdout.
 
 Settings come from flags or the environment, never from the YAML: `--addr` / `RESCADE_ADDR`,
 `--config-dir` / `RESCADE_CONFIG_DIR`, `--data-dir` / `RESCADE_DATA_DIR`, `--restic` / `RESCADE_RESTIC`,
-`--restore-dir` / `RESCADE_RESTORE_DIR` (an existing directory to restore into; unset = restore is off), `--token-file` / `RESCADE_TOKEN_FILE` (or the token itself in `RESCADE_TOKEN`), `--log-level` /
+`--restore-dir` / `RESCADE_RESTORE_DIR` (the directory to restore into, created if missing; unset = restore is off), `--token-file` / `RESCADE_TOKEN_FILE` (or the token itself in `RESCADE_TOKEN`), `--log-level` /
 `RESCADE_LOG_LEVEL`, `RESCADE_REPO_CHECK_TIMEOUT` (default `2m`), `RESCADE_ALLOWED_HOSTS` (Host header
 values to accept: `host:port` on that port, `host` on any; unset = any host), `RESCADE_CORS_ORIGINS`. See `rescaded --help`.
 

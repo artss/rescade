@@ -45,7 +45,7 @@ services:
       # A /host prefix is a safe choice; restore with `restic restore <id>:/host/home --target /home`.
       - /home:/host/home:ro
       - /etc:/host/etc:ro
-      # where `rescade restore` puts files (writable; the daemon does not start if it is missing)
+      # where `rescade restore` puts files (writable; created if missing)
       - /srv/restore:/restore
 
 secrets:
