@@ -8,7 +8,7 @@ import { SnapshotTree } from "../components/SnapshotTree.js";
 import { Time } from "../components/Time.js";
 import { td, th } from "../components/table.js";
 
-const link = "text-sky-700 hover:underline dark:text-sky-400";
+const link = "text-accent hover:underline";
 
 export const snapshotHref = (repo: string, id: string) => `${repoHref(repo)}/snapshots/${encodeURIComponent(id)}`;
 

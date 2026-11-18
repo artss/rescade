@@ -8,7 +8,7 @@ export function Button({
   icon,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & { danger?: boolean; icon?: string }) {
-  const color = danger ? "bg-red-600 hover:bg-red-700 text-white" : "bg-sky-600 hover:bg-sky-700 text-white dark:hover:bg-sky-500";
+  const color = danger ? "bg-red-600 hover:bg-red-700 text-white" : "bg-accent hover:bg-accent-hover text-white";
   return (
     <button
       type="button"

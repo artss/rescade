@@ -128,7 +128,7 @@ function Row({
 }) {
   const d = item.getItemData();
   const pad = { paddingLeft: `${item.getItemMeta().level * INDENT}px` };
-  const focus = "rounded outline-none focus-visible:ring-2 focus-visible:ring-sky-500";
+  const focus = "rounded outline-none focus-visible:ring-2 focus-visible:ring-accent";
 
   if (d?.kind !== "entry") {
     return (
@@ -138,7 +138,7 @@ function Row({
           {d?.failed && (
             <button
               type="button"
-              className="ml-2 text-sky-700 hover:underline dark:text-sky-400"
+              className="ml-2 text-accent hover:underline"
               onClick={(e) => {
                 e.stopPropagation();
                 void item.getTree().getItemInstance(d.dir).invalidateChildrenIds();
@@ -160,7 +160,7 @@ function Row({
     <div {...item.getProps()} className={`${columns} ${focus} cursor-default px-3 py-0.5 hover:bg-zinc-50 dark:hover:bg-zinc-800/50`}>
       <span style={pad} className="flex min-w-0 items-center gap-1.5">
         {folder && item.isLoading() ? (
-          <span role="status" className="text-sky-600 dark:text-sky-400">
+          <span role="status" className="text-accent">
             <Icon path={mdiLoading} label={`Loading ${e.path}`} className="size-5 animate-spin" />
           </span>
         ) : (
@@ -175,7 +175,7 @@ function Row({
               ev.stopPropagation();
               if (next) onPick(next);
             }}
-            className={`rounded disabled:cursor-not-allowed disabled:opacity-40 ${state === "unchecked" ? "text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300" : "text-sky-600 dark:text-sky-400"}`}
+            className={`rounded disabled:cursor-not-allowed disabled:opacity-40 ${state === "unchecked" ? "text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300" : "text-accent"}`}
           >
             <Icon path={boxIcon[state]} className="size-5" />
           </button>

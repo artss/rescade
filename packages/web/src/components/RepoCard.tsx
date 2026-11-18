@@ -18,7 +18,7 @@ export function RepoCard({ repo: r, detailed = false }: { repo: RepoView; detail
       <div className="flex flex-wrap items-center gap-3">
         {!detailed && (
           <h2 className="font-semibold">
-            <Link href={repoHref(r.name)} className="text-sky-700 hover:underline dark:text-sky-400">
+            <Link href={repoHref(r.name)} className="text-accent hover:underline">
               {r.name}
             </Link>
           </h2>
@@ -36,7 +36,7 @@ export function RepoCard({ repo: r, detailed = false }: { repo: RepoView; detail
           <>
             <dt className="text-zinc-500">Created from</dt>
             <dd>
-              <Link href={repoHref(r.from)} className="text-sky-700 hover:underline dark:text-sky-400">
+              <Link href={repoHref(r.from)} className="text-accent hover:underline">
                 {r.from}
               </Link>
             </dd>

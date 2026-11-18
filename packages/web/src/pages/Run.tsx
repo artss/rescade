@@ -30,7 +30,7 @@ export function RunPage({ id }: { id: number }) {
             {run.cascade === undefined ? (
               "restore"
             ) : (
-              <Link href={`/runs?cascade=${encodeURIComponent(run.cascade)}`} className="text-sky-700 hover:underline dark:text-sky-400">
+              <Link href={`/runs?cascade=${encodeURIComponent(run.cascade)}`} className="text-accent hover:underline">
                 {run.cascade}
               </Link>
             )}
@@ -70,7 +70,7 @@ export function RunPage({ id }: { id: number }) {
         {run.rerunOf !== undefined && (
           <p className="mt-2 text-sm text-zinc-500">
             Rerun of{" "}
-            <Link href={`/runs/${run.rerunOf}`} className="text-sky-700 hover:underline dark:text-sky-400">
+            <Link href={`/runs/${run.rerunOf}`} className="text-accent hover:underline">
               run {run.rerunOf}
             </Link>
             {(run.fromStep ?? 0) > 0 && <>: {run.fromStep === 1 ? "step 1 was" : `steps 1–${run.fromStep} were`} done there</>}
@@ -128,7 +128,7 @@ function Summary({ summary, repo }: { summary: Record<string, unknown>; repo?: s
             <dt className="text-zinc-500">{key.replaceAll("_", " ")}</dt>
             <dd className="font-mono">
               {key === "snapshot_id" && typeof v === "string" && repo !== undefined ? (
-                <Link href={snapshotHref(repo, v)} className="text-sky-700 hover:underline dark:text-sky-400">
+                <Link href={snapshotHref(repo, v)} className="text-accent hover:underline">
                   {v.slice(0, 8)}
                 </Link>
               ) : (

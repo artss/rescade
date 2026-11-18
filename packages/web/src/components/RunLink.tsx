@@ -3,7 +3,7 @@ import { Link } from "wouter";
 
 export function RunLink({ id, children }: { id: number; children?: ReactNode }) {
   return (
-    <Link href={`/runs/${id}`} className="text-sky-700 hover:underline dark:text-sky-400">
+    <Link href={`/runs/${id}`} className="text-accent hover:underline">
       {children ?? `run ${id}`}
     </Link>
   );

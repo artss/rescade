@@ -42,7 +42,7 @@ function CascadeCard({ cascade: c }: { cascade: CascadeView }) {
       <div className="flex items-start gap-4">
         <div className="min-w-0 flex-1">
           <h2 className="font-semibold">
-            <Link href={`/runs?${new URLSearchParams({ cascade: c.name })}`} className="text-sky-700 hover:underline dark:text-sky-400">
+            <Link href={`/runs?${new URLSearchParams({ cascade: c.name })}`} className="text-accent hover:underline">
               {c.name}
             </Link>
           </h2>
@@ -52,7 +52,7 @@ function CascadeCard({ cascade: c }: { cascade: CascadeView }) {
           <Link
             href={`/runs/${c.active.id}`}
             aria-label={`Running ${c.name}`}
-            className="rounded border border-sky-600 px-3 py-1 text-sm font-medium text-sky-700 hover:bg-sky-50 dark:border-sky-400 dark:text-sky-400 dark:hover:bg-sky-950"
+            className="rounded border border-accent px-3 py-1 text-sm font-medium text-accent hover:bg-accent/10"
           >
             Running
           </Link>
