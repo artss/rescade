@@ -6,7 +6,7 @@ import { parseEvents } from "../src/sse.js";
 import { formatBytes, formatDuration } from "../src/format.js";
 import { groupItems } from "../src/groups.js";
 import { pageRange, parsePage } from "../src/paging.js";
-import { stepDetails } from "../src/steps.js";
+import { openByDefault, stepDetails } from "../src/steps.js";
 import { checkState, parentOf, restorePaths, toggle, type Children } from "../src/selection.js";
 import type { CascadeStep, LogRecord, RunWithSteps } from "../src/types.js";
 
@@ -155,6 +155,14 @@ describe("stepDetails", () => {
       ["Env", "PGPASSWORD"],
       ["Timeout", "10m 00s"],
     ]);
+  });
+});
+
+describe("openByDefault", () => {
+  it("folds successful and queued steps and opens the rest", () => {
+    expect(openByDefault("success")).toBe(false);
+    expect(openByDefault("queued")).toBe(false);
+    for (const s of ["running", "failed", "warning", "cancelled", "skipped", "interrupted"]) expect(openByDefault(s)).toBe(true);
   });
 });
 

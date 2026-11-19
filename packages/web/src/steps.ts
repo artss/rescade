@@ -58,3 +58,6 @@ export function stepDetails(s: CascadeStep): StepDetail[] {
   }
   return out;
 }
+
+/** Whether a step of a run shows its log at first: successful steps are folded, and queued ones have nothing yet. */
+export const openByDefault = (status: string): boolean => status !== "success" && status !== "queued";
