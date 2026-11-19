@@ -307,6 +307,17 @@ describe("snapshots", () => {
 });
 
 describe("daemon status", () => {
+  it("reloads the config on the daemon", async () => {
+    renderApp("/");
+    const before = (await api<DaemonStatus>("GET", "/status")).config.lastReload?.at ?? 0;
+    fireEvent.click(await screen.findByRole("button", { name: "Reload config" }, wait));
+    expect(await screen.findByText("config reloaded", {}, wait)).toBeDefined();
+    const after = (await api<DaemonStatus>("GET", "/status")).config.lastReload;
+    expect(after).toMatchObject({ ok: true, errors: [] });
+    expect(after!.at).toBeGreaterThanOrEqual(before);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("warns when a config reload failed and the old config stays", () => {
     const qc = createQueryClient();
     const status: DaemonStatus = {

@@ -27,6 +27,14 @@ import { arrayOf, ref, schemas } from "./schemas.js";
 import { hostAllowed } from "./settings.js";
 import { VERSION } from "./version.js";
 
+/** The outcome of a config reload; `ok: false` keeps the config in use. */
+export interface ReloadResult {
+  at: number;
+  ok: boolean;
+  /** `file:line:col: message` */
+  errors: string[];
+}
+
 /** What `GET /status` shows about the daemon itself. */
 export interface DaemonStatus {
   version: string;
@@ -34,7 +42,7 @@ export interface DaemonStatus {
   config: {
     path: string;
     loadedAt: number;
-    lastReload?: { at: number; ok: boolean; errors: string[] };
+    lastReload?: ReloadResult;
   };
   /** Where snapshots are restored; absent = restore is off. */
   restoreDir?: string;
@@ -44,6 +52,8 @@ export interface ServerDeps {
   /** The current config; it changes on reload. */
   config: () => Config;
   status: () => DaemonStatus;
+  /** Rereads the config, as SIGHUP does. */
+  reload: () => Promise<ReloadResult>;
   runner: Runner;
   scheduler: Scheduler;
   store: Store;
@@ -245,6 +255,25 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
       },
     },
     async () => deps.status(),
+  );
+
+  app.post(
+    `${API_PREFIX}/reload`,
+    {
+      schema: {
+        summary: "Reread the config, as SIGHUP does",
+        description:
+          "Answers when the new config is loaded. With errors in it the config in use stays and `ok` is false; " +
+          "either way the outcome is also `config.lastReload` of `GET /api/status`. Runs in progress keep the config they started with.",
+        response: responses(200, "The outcome of the reload", ref("Reload"), 503),
+      },
+    },
+    async (request, reply) => {
+      if (deps.runner.isStopping) return reply.code(503).send({ error: "the daemon is stopping" });
+      const result = await deps.reload();
+      request.log.info({ ok: result.ok }, "config reload requested");
+      return result;
+    },
   );
 
   app.get(

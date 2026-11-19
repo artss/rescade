@@ -6,6 +6,7 @@ import type {
   CascadeView,
   DaemonStatus,
   LogRecord,
+  ReloadResult,
   RepoView,
   RunRecord,
   RunWithSteps,
@@ -67,6 +68,15 @@ function withStep(steps: StepRecord[], step: StepRecord): StepRecord[] {
 // a reload sends no event, so the status is polled
 export const useStatus = () =>
   useQuery({ queryKey: keys.status, queryFn: () => request<DaemonStatus>("GET", "/status"), refetchInterval: 30_000 });
+
+/** Makes the daemon reread its config; then everything on screen is asked for again, the status with the outcome. */
+export function useReload() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => request<ReloadResult>("POST", "/reload"),
+    onSuccess: () => qc.invalidateQueries(),
+  });
+}
 
 export const useCascades = () =>
   useQuery({ queryKey: keys.cascades, queryFn: () => request<CascadeView[]>("GET", "/cascades") });

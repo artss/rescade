@@ -368,18 +368,38 @@ describe("reload and stop", () => {
     });
 
     await writeFile(configFile, configYaml("  weekly:\n    steps:\n      - check: { repo: a }\n"));
-    expect(await daemon!.reload()).toBe(true);
+    expect((await daemon!.reload()).ok).toBe(true);
     expect((await api("GET", "/api/cascades")).body.map((c: { name: string }) => c.name)).toEqual(["daily", "slow", "weekly"]);
     const reloaded = (await api("GET", "/api/status")).body;
     expect(reloaded.config.lastReload).toEqual({ at: reloaded.config.loadedAt, ok: true, errors: [] });
 
     await writeFile(configFile, "cascades: [");
-    expect(await daemon!.reload()).toBe(false);
+    expect((await daemon!.reload()).ok).toBe(false);
     expect((await api("GET", "/api/cascades")).body).toHaveLength(3);
     expect(logs.some((l) => l.msg === "config reload failed, keeping the current config")).toBe(true);
     const failed = (await api("GET", "/api/status")).body;
     expect(failed.config.loadedAt).toBe(reloaded.config.loadedAt);
     expect(failed.config.lastReload).toMatchObject({ ok: false, errors: [expect.stringContaining("rescade.yaml:1:")] });
+  });
+
+  it("reloads the config on POST /api/reload, one reload at a time", async () => {
+    await start();
+    const configFile = path.join(fake.dir, "rescade.yaml");
+    await writeFile(configFile, "cascades: [");
+    const failed = await api("POST", "/api/reload");
+    expect(failed.status).toBe(200);
+    expect(failed.body).toEqual({ at: expect.any(Number), ok: false, errors: [expect.stringContaining("rescade.yaml:1:")] });
+    expect((await api("GET", "/api/status")).body.config.lastReload).toEqual(failed.body);
+
+    await writeFile(configFile, configYaml("  weekly:\n    steps:\n      - check: { repo: a }\n"));
+    expect((await api("POST", "/api/reload")).body).toMatchObject({ ok: true, errors: [] });
+    // the second waits for the first, so the outcome in the status is the later one
+    const [first, second] = await Promise.all([daemon!.reload(), daemon!.reload()]);
+    expect(first.ok && second.ok).toBe(true);
+    expect(second.at).toBeGreaterThanOrEqual(first.at);
+    const status = (await api("GET", "/api/status")).body;
+    expect(status.config).toMatchObject({ loadedAt: second.at, lastReload: second });
+    expect((await api("GET", "/api/cascades")).body.map((c: { name: string }) => c.name)).toContain("weekly");
   });
 
   it("interrupts runs in progress when stopping", async () => {

@@ -137,6 +137,7 @@ cascades:
   deps = {
     config: () => config,
     status: () => status,
+    reload: async () => ({ at: 800, ok: false, errors: ["a.yaml:2:3: error: y"] }),
     runner: {
       running: () => [run],
       trigger: () => run,
@@ -189,6 +190,7 @@ async function call(method: "GET" | "POST", url: string, headers: Record<string,
 describe("response schemas", () => {
   it.each([
     ["GET", "/api/status", 200],
+    ["POST", "/api/reload", 200],
     ["GET", "/api/cascades", 200],
     ["POST", "/api/cascades/daily/run", 202],
     ["GET", "/api/runs", 200],
@@ -390,6 +392,26 @@ describe("restore", () => {
   });
 });
 
+describe("reload", () => {
+  it("answers with the outcome, and 503 without reloading while the daemon stops", async () => {
+    expect((await call("POST", "/api/reload")).body).toEqual({ at: 800, ok: false, errors: ["a.yaml:2:3: error: y"] });
+
+    let reloads = 0;
+    const stopping = await buildServer({
+      ...deps,
+      reload: async () => ({ at: ++reloads, ok: true, errors: [] }),
+      runner: { ...deps.runner, isStopping: true } as unknown as ServerDeps["runner"],
+    });
+    try {
+      const res = await stopping.inject({ method: "POST", url: "/api/reload", headers: { host: HOST, authorization: `Bearer ${TOKEN}` } });
+      expect(res.statusCode).toBe(503);
+      expect(reloads).toBe(0);
+    } finally {
+      await stopping.close();
+    }
+  });
+});
+
 describe("web UI", () => {
   let web: FastifyInstance;
   beforeAll(async () => {
@@ -491,6 +513,7 @@ describe("OpenAPI document", () => {
       "GET /api/status",
       "GET /api/summary",
       "POST /api/cascades/{name}/run",
+      "POST /api/reload",
       "POST /api/repos/{name}/snapshots/{id}/restore",
       "POST /api/runs/{id}/cancel",
       "POST /api/runs/{id}/rerun",

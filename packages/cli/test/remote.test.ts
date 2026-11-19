@@ -133,9 +133,23 @@ describe("the CLI through the daemon", () => {
     expect(log.stdout).toContain("    Applying Policy: keep 7 daily snapshots");
   });
 
+  it("reloads the config and tells about errors in it", async () => {
+    const ok = await cli(["reload"]);
+    expect(ok).toMatchObject({ code: 0, stdout: "config reloaded\n", stderr: "" });
+
+    await writeFile(path.join(fake.dir, "rescade.yaml"), "cascades: [");
+    const failed = await cli(["reload"]);
+    expect(failed.code).toBe(1);
+    expect(failed.stderr).toMatch(/^.*rescade\.yaml:1:\d+: error: .*\nfailed: the config has errors, the daemon keeps the config it had\n$/s);
+    const json = await cli(["reload", "--json"]);
+    expect(json.code).toBe(1);
+    expect(JSON.parse(json.stdout)).toMatchObject({ ok: false, errors: [expect.stringContaining("rescade.yaml:1:")] });
+    expect((await cli(["status"])).stdout).toMatch(/^reload at .* failed/m);
+  });
+
   it("tells when a config reload failed", async () => {
     await writeFile(path.join(fake.dir, "rescade.yaml"), "cascades: [");
-    expect(await daemon!.reload()).toBe(false);
+    expect((await daemon!.reload()).ok).toBe(false);
     const status = await cli(["status"]);
     expect(status.stdout).toMatch(/^reload at .* failed, the config loaded before stays in use:\n  .*rescade\.yaml:1:\d+: error: /m);
     expect(status.stdout).toMatch(/^daily /m);
