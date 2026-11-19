@@ -1,13 +1,15 @@
-import { mdiCloseCircleOutline, mdiPlayOutline } from "@mdi/js";
+import { mdiChevronRight, mdiCloseCircleOutline, mdiPlayOutline } from "@mdi/js";
 import { useLayoutEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { formatBytes, formatDuration } from "../format.js";
 import { canRerun, isActive, useCancelRun, useLog, useRerun, useRun } from "../queries.js";
+import { openByDefault } from "../steps.js";
 import type { LogRecord, StepRecord } from "../types.js";
 import { Badge } from "../components/Badge.js";
 import { Button } from "../components/Button.js";
 import { Card } from "../components/Card.js";
 import { ErrorBox } from "../components/ErrorBox.js";
+import { Icon } from "../components/Icon.js";
 import { Loading } from "../components/Loading.js";
 import { Time } from "../components/Time.js";
 import { snapshotHref } from "./Repo.js";
@@ -80,33 +82,74 @@ export function RunPage({ id }: { id: number }) {
         {rerun.error && <div className="mt-2"><ErrorBox error={rerun.error} /></div>}
       </Card>
 
-      <ol className="space-y-2">
-        {run.steps.map((s) => (
-          <StepItem key={s.index} step={s} />
-        ))}
-      </ol>
-
-      <LogView runId={run.id} steps={run.steps} follow={active} />
+      <Steps runId={run.id} steps={run.steps} />
     </div>
   );
 }
 
-function StepItem({ step: s }: { step: StepRecord }) {
+/** The steps of a run, each with its own part of the log. */
+function Steps({ runId, steps }: { runId: number; steps: StepRecord[] }) {
+  const { data, error } = useLog(runId);
+  const byStep = new Map<number, LogRecord[]>();
+  for (const l of data?.lines ?? []) {
+    const have = byStep.get(l.step);
+    if (have) have.push(l);
+    else byStep.set(l.step, [l]);
+  }
   return (
-    <li className="rounded-lg border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
-      <div className="flex flex-wrap items-center gap-3 text-sm">
+    <>
+      {error && <ErrorBox error={error} />}
+      <ol className="space-y-2">
+        {steps.map((s) => (
+          <StepItem key={s.index} step={s} lines={byStep.get(s.index) ?? []} logComplete={data?.complete ?? false} />
+        ))}
+      </ol>
+    </>
+  );
+}
+
+/**
+ * A step with its log. Finished successful steps start folded, the rest open; a click on the header
+ * folds or unfolds it until the step changes state again.
+ */
+function StepItem({ step: s, lines, logComplete }: { step: StepRecord; lines: LogRecord[]; logComplete: boolean }) {
+  const [choice, setChoice] = useState<{ status: string; open: boolean }>();
+  const open = choice?.status === s.status ? choice.open : openByDefault(s.status);
+  const bodyId = `step-${s.index}`;
+  return (
+    <li className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={bodyId}
+        onClick={() => setChoice({ status: s.status, open: !open })}
+        className="flex w-full flex-wrap items-center gap-3 px-4 py-3 text-left text-sm"
+      >
+        <Icon path={mdiChevronRight} className={`size-4 text-zinc-500 transition-transform ${open ? "rotate-90" : ""}`} />
         <span className="text-zinc-500">{s.index + 1}.</span>
         <span className="font-mono">{s.label}</span>
         <Badge status={s.status} />
         {s.exitCode !== undefined && <span className="text-zinc-500">exit {s.exitCode}</span>}
         {s.durationMs !== undefined && <span className="text-zinc-500">{formatDuration(s.durationMs)}</span>}
-      </div>
-      {s.reason && <p className="mt-1 text-sm">{s.reason}</p>}
-      {s.summary && <Summary summary={s.summary} repo={s.repo} />}
-      {s.stderrTail && s.stderrTail.length > 0 && (
-        <pre className="mt-2 overflow-x-auto rounded bg-zinc-100 p-2 text-xs text-red-800 dark:bg-zinc-950 dark:text-red-300">
-          {s.stderrTail.join("\n")}
-        </pre>
+      </button>
+      {open && (
+        <div id={bodyId} className="space-y-2 px-4 pb-3">
+          {s.reason && <p className="text-sm">{s.reason}</p>}
+          {s.summary && <Summary summary={s.summary} repo={s.repo} />}
+          {lines.length > 0 ? (
+            <StepLog index={s.index} lines={lines} follow={s.status === "running"} />
+          ) : s.stderrTail && s.stderrTail.length > 0 ? (
+            // the log of an old run may be deleted, the tail of stderr stays with the step
+            <pre className="overflow-x-auto rounded bg-zinc-100 p-2 text-xs text-red-800 dark:bg-zinc-950 dark:text-red-300">
+              {s.stderrTail.join("\n")}
+            </pre>
+          ) : !logComplete ? (
+            <Loading />
+          ) : (
+            s.status !== "queued" &&
+            s.status !== "running" && <p className="text-sm text-zinc-500">No log lines (logs of old runs are deleted after a while).</p>
+          )}
+        </div>
       )}
     </li>
   );
@@ -147,72 +190,28 @@ const streamClass: Record<LogRecord["stream"], string> = {
   info: "text-zinc-500 italic",
 };
 
-/** The run's log, all steps or one; while the run goes on it keeps to the bottom unless scrolled up. */
-function LogView({ runId, steps, follow }: { runId: number; steps: StepRecord[]; follow: boolean }) {
-  const { data, error } = useLog(runId);
-  const [step, setStep] = useState<number>();
+/** A step's log; while the step runs it keeps to the bottom unless scrolled up. */
+function StepLog({ index, lines, follow }: { index: number; lines: LogRecord[]; follow: boolean }) {
   const box = useRef<HTMLPreElement>(null);
   const atBottom = useRef(true);
   useLayoutEffect(() => {
     if (follow && atBottom.current && box.current) box.current.scrollTop = box.current.scrollHeight;
-  }, [data, follow, step]);
-
-  const lines = (data?.lines ?? []).filter((l) => step === undefined || l.step === step);
-  const label = (index: number) => steps.find((s) => s.index === index)?.label ?? "";
-  const rows: React.ReactNode[] = [];
-  let current: number | undefined;
-  for (const l of lines) {
-    if (step === undefined && l.step !== current) {
-      rows.push(
-        <div key={`step-${l.id}`} className="mt-2 font-semibold text-zinc-600 first:mt-0 dark:text-zinc-300">
-          ==&gt; [{l.step + 1}] {label(l.step)}
-        </div>,
-      );
-    }
-    current = l.step;
-    rows.push(
-      <div key={l.id} className={streamClass[l.stream]}>
-        {l.line}
-      </div>,
-    );
-  }
-
+  }, [lines, follow]);
   return (
-    <Card>
-      <div className="mb-2 flex items-center gap-3">
-        <h2 className="font-semibold">Log</h2>
-        <select
-          aria-label="Step"
-          value={step ?? ""}
-          onChange={(e) => setStep(e.target.value === "" ? undefined : Number(e.target.value))}
-          className="rounded border border-zinc-300 bg-white px-2 py-0.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-        >
-          <option value="">all steps</option>
-          {steps.map((s) => (
-            <option key={s.index} value={s.index}>
-              {s.index + 1}. {s.label}
-            </option>
-          ))}
-        </select>
-      </div>
-      {error && <ErrorBox error={error} />}
-      {!data?.complete && !error && <Loading />}
-      {data?.complete && lines.length === 0 && (
-        <p className="text-sm text-zinc-500">No log lines (logs of old runs are deleted after a while).</p>
-      )}
-      {lines.length > 0 && (
-        <pre
-          ref={box}
-          data-testid="log"
-          onScroll={(e) => {
-            const el = e.currentTarget;
-            atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
-          }}
-          className="max-h-[32rem] overflow-auto rounded bg-zinc-100 p-3 text-xs leading-5 dark:bg-zinc-950"
-        >
-          {rows}
-        </pre>
-      )}
-    </Card>
+    <pre
+      ref={box}
+      data-testid={`log-${index}`}
+      onScroll={(e) => {
+        const el = e.currentTarget;
+        atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+      }}
+      className="max-h-[32rem] overflow-auto rounded bg-zinc-100 p-3 text-xs leading-5 dark:bg-zinc-950"
+    >
+      {lines.map((l) => (
+        <div key={l.id} className={streamClass[l.stream]}>
+          {l.line}
+        </div>
+      ))}
+    </pre>
   );
 }

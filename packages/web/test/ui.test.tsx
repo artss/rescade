@@ -61,8 +61,14 @@ describe("cascades and runs", () => {
     const id = Number(location.pathname.split("/").at(-1));
     expect(await screen.findByRole("heading", { name: `Run ${id} of daily` }, wait)).toBeDefined();
     await waitFor(() => expect(within(screen.getByRole("heading", { level: 1 }).parentElement!).getByText("success")), wait);
-    await waitFor(() => expect(screen.getByTestId("log").textContent).toContain("Applying Policy: keep 7 daily snapshots"), wait);
-    expect(screen.getByTestId("log").textContent).toContain("==> [1] retain a");
+    // the step that succeeded is folded, a click shows its log and folds it again
+    const step = await screen.findByRole("button", { name: /retain a/, expanded: false }, wait);
+    expect(screen.queryByTestId("log-0")).toBeNull();
+    fireEvent.click(step);
+    expect(step.getAttribute("aria-expanded")).toBe("true");
+    await waitFor(() => expect(screen.getByTestId("log-0").textContent).toContain("Applying Policy: keep 7 daily snapshots"), wait);
+    fireEvent.click(step);
+    expect(screen.queryByTestId("log-0")).toBeNull();
   });
 
   it("groups cascades under headings that collapse, ungrouped ones stay as they are", async () => {
@@ -141,7 +147,9 @@ describe("cascades and runs", () => {
       cascades.unmount();
 
       renderApp(`/runs/${run.id}`);
-      await waitFor(() => expect(screen.getByTestId("log").textContent).toContain("holding"), wait);
+      // the running step is open with its live log
+      await waitFor(() => expect(screen.getByTestId("log-0").textContent).toContain("holding"), wait);
+      expect(screen.getByRole("button", { name: /1\./ }).getAttribute("aria-expanded")).toBe("true");
       // declining the confirmation leaves the run alone
       const confirm = vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true);
       vi.stubGlobal("confirm", confirm);
@@ -253,6 +261,7 @@ describe("snapshots", () => {
   it("links the snapshot of a backup step to the snapshot", async () => {
     const run = await api<RunRecord>("POST", "/cascades/home/run");
     renderApp(`/runs/${run.id}`);
+    fireEvent.click(await screen.findByRole("button", { name: /backup/, expanded: false }, { timeout: 5000 }));
     const link = await screen.findByRole("link", { name: /^[0-9a-f]{8}$/ }, { timeout: 5000 });
     fireEvent.click(link);
     await waitFor(() => expect(location.pathname).toMatch(/^\/repos\/a\/snapshots\/[0-9a-f]{64}$/), wait);
