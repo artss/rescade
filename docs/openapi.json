@@ -763,6 +763,31 @@
           }
         ]
       },
+      "Reload": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "integer",
+            "description": "Epoch milliseconds"
+          },
+          "ok": {
+            "type": "boolean",
+            "description": "false: the new config had errors and the old one stays"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "file:line:col: message"
+          }
+        },
+        "required": [
+          "at",
+          "ok",
+          "errors"
+        ]
+      },
       "Status": {
         "type": "object",
         "properties": {
@@ -785,30 +810,7 @@
                 "description": "When the config in use was loaded"
               },
               "lastReload": {
-                "type": "object",
-                "description": "The latest reload (SIGHUP); absent until there was one",
-                "properties": {
-                  "at": {
-                    "type": "integer",
-                    "description": "Epoch milliseconds"
-                  },
-                  "ok": {
-                    "type": "boolean",
-                    "description": "false: the new config had errors and the old one stays"
-                  },
-                  "errors": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    },
-                    "description": "file:line:col: message"
-                  }
-                },
-                "required": [
-                  "at",
-                  "ok",
-                  "errors"
-                ]
+                "$ref": "#/components/schemas/Reload"
               }
             },
             "required": [
@@ -1182,6 +1184,54 @@
           },
           "403": {
             "description": "Host not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reload": {
+      "post": {
+        "summary": "Reread the config, as SIGHUP does",
+        "description": "Answers when the new config is loaded. With errors in it the config in use stays and `ok` is false; either way the outcome is also `config.lastReload` of `GET /api/status`. Runs in progress keep the config they started with.",
+        "responses": {
+          "200": {
+            "description": "The outcome of the reload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Reload"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Host not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The daemon is stopping",
             "content": {
               "application/json": {
                 "schema": {

@@ -16,7 +16,7 @@ import {
   type RunnerEvent,
 } from "@rescade/core";
 import { RepoStates } from "./repos.js";
-import { buildServer, type DaemonStatus } from "./server.js";
+import { buildServer, type DaemonStatus, type ReloadResult } from "./server.js";
 import { allowedHosts, type Settings } from "./settings.js";
 import { VERSION } from "./version.js";
 
@@ -26,8 +26,8 @@ export interface Daemon {
   app: FastifyInstance;
   /** "host:port" the API listens on (the port is the real one when 0 was asked for). */
   address: string;
-  /** Rereads the config; on errors keeps the current one. Returns whether the new config was taken. */
-  reload(): Promise<boolean>;
+  /** Rereads the config; on errors keeps the current one. Reloads asked for during one wait for it and do their own. */
+  reload(): Promise<ReloadResult>;
   /** Stops scheduling, interrupts runs in progress and closes the API and the store. */
   stop(): Promise<void>;
 }
@@ -141,11 +141,36 @@ export async function startDaemon(settings: Settings, logger: Logger, options: D
 
     const webDir = options.webDir === undefined ? findWebDir() : (options.webDir ?? undefined);
     if (webDir === undefined) logger.info("the web UI is not built, serving only the API");
+    // one at a time: two loads finishing out of order would leave the older config in use
+    let reloading: Promise<unknown> = Promise.resolve();
+    const reload = (): Promise<ReloadResult> => {
+      const next = reloading.then(reloadNow);
+      reloading = next.catch(() => {});
+      return next;
+    };
+    const reloadNow = async (): Promise<ReloadResult> => {
+      const at = Date.now();
+      const { config: next, errors } = await readConfig(settings.configDir, logger);
+      const result = { at, ok: next !== undefined, errors };
+      status.config.lastReload = result;
+      if (!next) {
+        logger.error("config reload failed, keeping the current config");
+        return result;
+      }
+      config = next;
+      status.config.loadedAt = at;
+      runner.setConfig(next);
+      scheduler.update(next.cascades);
+      logger.info({ cascades: Object.keys(next.cascades).length }, "config reloaded");
+      return result;
+    };
+
     const extraHosts = settings.extraHosts;
     const hosts = extraHosts && new Set<string>();
     const app = await buildServer({
       config: () => config,
       status: () => status,
+      reload,
       runner,
       scheduler,
       store,
@@ -170,21 +195,7 @@ export async function startDaemon(settings: Settings, logger: Logger, options: D
     return {
       app,
       address,
-      async reload() {
-        const at = Date.now();
-        const { config: next, errors } = await readConfig(settings.configDir, logger);
-        status.config.lastReload = { at, ok: next !== undefined, errors };
-        if (!next) {
-          logger.error("config reload failed, keeping the current config");
-          return false;
-        }
-        config = next;
-        status.config.loadedAt = at;
-        runner.setConfig(next);
-        scheduler.update(next.cascades);
-        logger.info({ cascades: Object.keys(next.cascades).length }, "config reloaded");
-        return true;
-      },
+      reload,
       stop() {
         stopping ??= (async () => {
           logger.info("stopping");

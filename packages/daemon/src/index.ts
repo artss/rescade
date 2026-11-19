@@ -29,7 +29,9 @@ async function main(): Promise<number> {
     return 1;
   }
 
-  process.on("SIGHUP", () => void daemon.reload());
+  process.on("SIGHUP", () => {
+    daemon.reload().catch((err: unknown) => logger.error({ err }, "config reload failed"));
+  });
   // once: a second signal gets the default handling and ends the process at once
   return new Promise((resolve) => {
     const onStop = (signal: string) => {

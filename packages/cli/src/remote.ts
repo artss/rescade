@@ -34,11 +34,18 @@ interface RepoView {
   lockedBy?: { runId: number; cascade?: string };
 }
 
+/** `POST /reload`, also `config.lastReload` of `GET /status`. */
+interface ReloadView {
+  at: number;
+  ok: boolean;
+  errors: string[];
+}
+
 /** `GET /status`. */
 interface DaemonView {
   version: string;
   startedAt: number;
-  config: { path: string; loadedAt: number; lastReload?: { at: number; ok: boolean; errors: string[] } };
+  config: { path: string; loadedAt: number; lastReload?: ReloadView };
 }
 
 const print = (value: unknown) => process.stdout.write(JSON.stringify(value, null, 2) + "\n");
@@ -293,6 +300,18 @@ export async function showLog(client: ApiClient, id: string, step: string | unde
     console.log(logLine(l.stream, l.line));
   }
   return 0;
+}
+
+/** Asks the daemon to reread its config; 1 when the new config has errors and the old one stays. */
+export async function reloadConfig(client: ApiClient, json: boolean): Promise<number> {
+  const result = await client.post<ReloadView>("/reload");
+  if (json) print(result);
+  else if (result.ok) console.log("config reloaded");
+  else {
+    for (const e of result.errors) console.error(e);
+    console.error("failed: the config has errors, the daemon keeps the config it had");
+  }
+  return result.ok ? 0 : 1;
 }
 
 export async function cancelRun(client: ApiClient, id: string, json: boolean): Promise<number> {

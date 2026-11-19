@@ -64,6 +64,13 @@ export interface RepoView {
   lockedBy?: { runId: number; cascade?: string };
 }
 
+/** `POST /api/reload`; `ok: false` = the config has errors and the old one stays. */
+export interface ReloadResult {
+  at: number;
+  ok: boolean;
+  errors: string[];
+}
+
 /** `GET /api/status`. */
 export interface DaemonStatus {
   version: string;
@@ -71,7 +78,7 @@ export interface DaemonStatus {
   config: {
     path: string;
     loadedAt: number;
-    lastReload?: { at: number; ok: boolean; errors: string[] };
+    lastReload?: ReloadResult;
   };
   /** Where snapshots are restored (`<restoreDir>/<short id>`); absent = restore is off. */
   restoreDir?: string;

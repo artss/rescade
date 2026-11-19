@@ -25,7 +25,8 @@ current step (SIGTERM, then SIGKILL), the second exits at once.
 
 At start it checks every repo (initializing missing ones) and refuses to start on config errors or on
 a reachable repo it cannot use (wrong password, failed init); unreachable repos only show in the state.
-SIGHUP rereads the config (a broken one is reported and the old one kept), SIGTERM stops: runs in
+SIGHUP, `rescade reload` or `POST /api/reload` rereads the config (a broken one is reported and the old one kept;
+runs in progress finish with the config they started with), SIGTERM stops: runs in
 progress end as `interrupted`. Logs are JSON lines on stdout.
 
 Settings come from flags or the environment, never from the YAML: `--addr` / `RESCADE_ADDR`,
@@ -98,7 +99,8 @@ with `RESCADE_ALLOWED_HOSTS` set, the name in `url` (`rescade` above) must be in
 
 The daemon serves it on its own address (`http://127.0.0.1:8765/` by default) when `packages/web` is built
 (`pnpm build`). It asks for the API token once per tab ("Remember" keeps it in the browser) and shows
-cascades, runs with live logs, repos and their locks, and a warning when a config reload failed.
+cascades, runs with live logs, repos and their locks; Reload config in the header rereads the config, and a
+warning stays on screen while a reload failed.
 To work on it, `pnpm --filter @rescade/web dev` serves it with Vite and proxies `/api` to `$RESCADE_URL`.
 
 ## Docker
@@ -119,13 +121,14 @@ mounted read-only, history and restic's cache in a volume.
 - Docker Desktop on macOS cannot back up bind-mounted host directories: restic sets `O_NOATIME` on each file it
   reads, and Docker Desktop's file sharing then fails every read with `input/output error`. Named volumes work
   there; on Linux hosts bind mounts are plain mounts and are not affected.
-- `docker compose kill -s HUP rescade` rereads the config, `docker compose exec rescade rescade status` uses the CLI.
+- `docker compose kill -s HUP rescade` (or `rescade reload`) rereads the config, `docker compose exec rescade rescade status` uses the CLI.
 - `GET /api/health` answers without the token for the image's health check.
 
 ## The client
 
     rescade run <cascade> [--detach]    # start and follow; Ctrl+C cancels the run
     rescade status                      # the daemon, its config, cascades with their last and next runs
+    rescade reload                      # reread the config; prints the errors and keeps the old one if it is broken
     rescade runs [--cascade <name>] [--limit <n>]
     rescade show <run>
     rescade log <run> [--step <n>]
@@ -145,6 +148,7 @@ Exit codes:
 - `run`: 0 success, 3 warning, 1 failed, interrupted or config errors, 130 cancelled,
   75 skipped (repos busy or the cascade already running), 2 bad usage.
 - `restore`: 0 success, 1 failed or interrupted, 130 cancelled, 2 bad usage.
+- `reload`: 0 reloaded, 1 errors in the new config (the daemon keeps the old one) or no connection.
 - the others: 0 done, 1 error from the daemon or no connection, 2 bad usage.
 
 ## Config

@@ -18,6 +18,7 @@ import {
   listRepos,
   listRuns,
   listSnapshots,
+  reloadConfig,
   rerunRemote,
   restoreRemote,
   runRemote,
@@ -35,6 +36,7 @@ Usage:
   through the daemon:
   rescade run <cascade> [--detach]    start a cascade and follow it (Ctrl+C cancels it)
   rescade status                      the daemon, its config, cascades with their last and next runs
+  rescade reload                      make the daemon reread its config (as SIGHUP does)
   rescade runs [--cascade <name>] [--limit <n>] [--before <id>]
   rescade show <run>                  a run and its steps
   rescade log <run> [--step <n>]      the log of a run (steps count from 1)
@@ -71,6 +73,7 @@ Exit codes:
             75 skipped (repos busy or the cascade already running), 2 bad usage
   rerun     as run; 1 also when the run cannot be rerun
   restore   0 success, 1 failed or interrupted, 130 cancelled, 2 bad usage
+  reload    0 reloaded, 1 the config has errors (the daemon keeps the old one) or no connection
   others    0 done, 1 error from the daemon or no connection, 2 bad usage
 `;
 
@@ -312,6 +315,7 @@ async function connect(values: { url?: string; "token-file"?: string }): Promise
 /** Positional arguments of each command: how many at least and at most. */
 const ARITY: Record<string, [number, number, string]> = {
   status: [0, 0, "takes no arguments"],
+  reload: [0, 0, "takes no arguments"],
   runs: [0, 0, "takes no arguments"],
   repos: [0, 0, "takes no arguments"],
   show: [1, 1, "needs one run id"],
@@ -321,7 +325,7 @@ const ARITY: Record<string, [number, number, string]> = {
   ls: [2, 3, "needs a repo, a snapshot id and optionally a path"],
 };
 
-/** Commands that only ask the daemon: status, runs, show, log, cancel, repos, snapshots, ls. */
+/** Commands that only ask the daemon: status, reload, runs, show, log, cancel, repos, snapshots, ls. */
 async function remote(command: string, argv: string[]): Promise<number> {
   let parsed;
   try {
@@ -371,6 +375,8 @@ async function remote(command: string, argv: string[]): Promise<number> {
   switch (command) {
     case "status":
       return status(client, values.json);
+    case "reload":
+      return reloadConfig(client, values.json);
     case "runs":
       return listRuns(client, { cascade: values.cascade, limit: values.limit, before: values.before }, values.json);
     case "show":
@@ -409,6 +415,7 @@ async function main(argv: string[]): Promise<number> {
     case "restore":
       return restore(rest);
     case "status":
+    case "reload":
     case "runs":
     case "show":
     case "log":

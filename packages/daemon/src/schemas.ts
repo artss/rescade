@@ -263,6 +263,17 @@ const RepoCheck = {
   ],
 } as const;
 
+const Reload = {
+  $id: "Reload",
+  type: "object",
+  properties: {
+    at: epochMs,
+    ok: { type: "boolean", description: "false: the new config had errors and the old one stays" },
+    errors: { type: "array", items: { type: "string" }, description: "file:line:col: message" },
+  },
+  required: ["at", "ok", "errors"],
+} as const;
+
 const Status = {
   $id: "Status",
   type: "object",
@@ -274,16 +285,7 @@ const Status = {
       properties: {
         path: { type: "string", description: "The config directory or file" },
         loadedAt: { ...epochMs, description: "When the config in use was loaded" },
-        lastReload: {
-          type: "object",
-          description: "The latest reload (SIGHUP); absent until there was one",
-          properties: {
-            at: epochMs,
-            ok: { type: "boolean", description: "false: the new config had errors and the old one stays" },
-            errors: { type: "array", items: { type: "string" }, description: "file:line:col: message" },
-          },
-          required: ["at", "ok", "errors"],
-        },
+        lastReload: { $ref: "Reload#", description: "The latest reload (SIGHUP or `POST /api/reload`); absent until there was one" },
       },
       required: ["path", "loadedAt"],
     },
@@ -428,6 +430,7 @@ export const schemas = [
   RepoLockList,
   Repo,
   RepoCheck,
+  Reload,
   Status,
   Summary,
   Snapshot,
