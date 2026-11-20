@@ -202,3 +202,15 @@ server, so the daemon must be reachable from there (a shared Docker network, not
 with `RESCADE_ALLOWED_HOSTS` set, the name in `url` (`rescade` above) must be in it.
 
 <img width="371" height="426" alt="image" src="https://github.com/user-attachments/assets/1ff30b05-2966-4ca8-b3b7-a237acfe5aed" />
+
+
+## License
+
+[Apache License 2.0](LICENSE). Copyright 2026 Arts (https://github.com/artss).
+
+Redistributions and derivative works must keep the [`NOTICE`](NOTICE) file with the link to
+https://github.com/artss/rescade.
+
+The Docker image also contains [restic](https://github.com/restic/restic) (BSD 2-Clause); its license
+is in `/usr/share/licenses/restic/LICENSE` inside the image, rescade's own `LICENSE` and `NOTICE`
+are in `/usr/share/licenses/rescade/`.

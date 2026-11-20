@@ -34,12 +34,16 @@ RUN case "$TARGETARCH" in \
  && wget -qO /tmp/restic.bz2 "https://github.com/restic/restic/releases/download/v${RESTIC_VERSION}/restic_${RESTIC_VERSION}_linux_${TARGETARCH}.bz2" \
  && echo "$sum  /tmp/restic.bz2" | sha256sum -c - \
  && bunzip2 /tmp/restic.bz2 \
- && install -m 755 /tmp/restic /usr/local/bin/restic
+ && install -m 755 /tmp/restic /usr/local/bin/restic \
+ && wget -qO /tmp/restic-LICENSE "https://raw.githubusercontent.com/restic/restic/v${RESTIC_VERSION}/LICENSE"
 
 FROM node:26-alpine
 # tini reaps orphaned grandchildren of steps; openssh-client for sftp; tzdata for cascade time zones
 RUN apk add --no-cache tini openssh-client ca-certificates tzdata
 COPY --from=restic /usr/local/bin/restic /usr/local/bin/restic
+# restic's BSD-2-Clause asks for its license next to the binary; ours ships with NOTICE
+COPY --from=restic /tmp/restic-LICENSE /usr/share/licenses/restic/LICENSE
+COPY LICENSE NOTICE /usr/share/licenses/rescade/
 COPY --from=build /out/daemon /opt/rescade/daemon
 COPY --from=build /out/cli /opt/rescade/cli
 # tsc does not set the exec bit on dist/*.js, so both get a wrapper
