@@ -310,12 +310,36 @@ describe("daemon status", () => {
   it("reloads the config on the daemon", async () => {
     renderApp("/");
     const before = (await api<DaemonStatus>("GET", "/status")).config.lastReload?.at ?? 0;
-    fireEvent.click(await screen.findByRole("button", { name: "Reload config" }, wait));
+    fireEvent.click(await screen.findByRole("button", { name: "Menu" }, wait));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Reload config" }));
+    expect(screen.queryByRole("menu")).toBeNull();
     expect(await screen.findByText("config reloaded", {}, wait)).toBeDefined();
     const after = (await api<DaemonStatus>("GET", "/status")).config.lastReload;
     expect(after).toMatchObject({ ok: true, errors: [] });
     expect(after!.at).toBeGreaterThanOrEqual(before);
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("keeps reload and sign out in the header menu, the version and GitHub in the footer", async () => {
+    renderApp("/");
+    const footer = await screen.findByRole("contentinfo", {}, wait);
+    const version = (await api<DaemonStatus>("GET", "/status")).version;
+    expect(await within(footer).findByText(`rescaded ${version}`, {}, wait)).toBeDefined();
+    expect(within(footer).getByRole("link", { name: "GitHub" }).getAttribute("href")).toBe("https://github.com/artss/rescade");
+
+    const toggle = screen.getByRole("button", { name: "Menu" });
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    fireEvent.click(toggle);
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole("menu")).toBeNull();
+
+    fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Sign out" }));
+    expect(await screen.findByLabelText("API token", {}, wait)).toBeDefined();
+    expect(sessionStorage.getItem("rescade.token")).toBeNull();
   });
 
   it("warns when a config reload failed and the old config stays", () => {
