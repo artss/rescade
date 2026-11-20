@@ -30,7 +30,7 @@ API под `/api`, остальные пути отдают собранный �
 `/api/repos/:name/snapshots[/:id/ls]`, CLI `snapshots` и `ls`, страница репо `pages/Repo.tsx` (состояние и снапшоты, ссылка с имени на `/repos`),
 снапшот деревом `components/SnapshotTree.tsx` (`@headless-tree`, подгрузка каталога при раскрытии, чекбоксы для restore, логика выбора в `selection.ts`); у шага backup поле
 `repo`, схема базы v2 с миграцией в `Store.open`). Бэкенды restic (`src/config/backends.ts`: префикс `path`, опции по бэкенду, конфликты `env`/`options` в парах
-`copy`/`from`; описание в `docs/backends.md`). 294 теста vitest (проекты `node` и `web`), фейковый restic в `packages/core/test/fake-restic.mjs`, 9 интеграционных с настоящим restic
+`copy`/`from`; описание в `docs/backends.md`). 295 тестов vitest (проекты `node` и `web`), фейковый restic в `packages/core/test/fake-restic.mjs`, 9 интеграционных с настоящим restic
 (проверено на 0.19.1), пример в `examples/config`.
 
 Шаги 1–7 из DESIGN.md сделаны. Шаг 8: `Dockerfile`, `.github/workflows/ci.yaml` (тесты, затем образ
@@ -47,7 +47,7 @@ API под `/api`, остальные пути отдают собранный �
 (`canRerun` в `queries.ts`; проверку меток шагов делает только демон).
 
 Перезагрузка конфига без перезапуска: SIGHUP, `POST /api/reload` (200 с `{ at, ok, errors }`, перезагрузки
-по одной), CLI `reload`, кнопка Reload config в шапке веба (`ReloadButton` в `Layout.tsx`).
+по одной), CLI `reload`, пункт Reload config в меню шапки веба (`HeaderMenu` в `Layout.tsx`, там же Sign out; версия демона и ссылка на GitHub в футере).
 
 Страницы истории: `offset` и `Store.countRuns`, у `GET /api/runs` заголовок `X-Total-Count` (открыт для CORS),
 в вебе `?page=` в URL и переключатель Newer/Older в `pages/Runs.tsx` (`paging.ts`).

@@ -1,9 +1,11 @@
-import { useEffect, type ReactNode } from "react";
+import { mdiDotsVertical, mdiGithub, mdiLogout, mdiReload } from "@mdi/js";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "wouter";
 import logo from "../assets/rescade-logo.svg";
 import { formatTime } from "../format.js";
 import { useReload, useStatus } from "../queries.js";
 import { clearToken } from "../token.js";
+import { Icon } from "./Icon.js";
 import { NavLink } from "./NavLink.js";
 
 export type Connection = "connecting" | "live" | "down";
@@ -16,9 +18,8 @@ const connectionText: Record<Connection, [string, string]> = {
 
 export function Layout({ connection, children }: { connection: Connection; children: ReactNode }) {
   const [dot, text] = connectionText[connection];
-  const { data: status } = useStatus();
   return (
-    <>
+    <div className="flex min-h-screen flex-col">
       <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2">
           <Link href="/" className="shrink-0">
@@ -34,22 +35,27 @@ export function Layout({ connection, children }: { connection: Connection; child
               <span className={`h-2 w-2 rounded-full ${dot}`} />
               {text}
             </span>
-            {status && <span title={`up since ${formatTime(status.startedAt)}`}>rescaded {status.version}</span>}
-            <ReloadButton />
-            <button type="button" className="hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => clearToken()}>
-              Sign out
-            </button>
+            <HeaderMenu />
           </div>
         </div>
       </header>
       <ReloadBanner />
-      <main className="mx-auto max-w-6xl px-4 py-6">{children}</main>
-    </>
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">{children}</main>
+      <Footer />
+    </div>
   );
 }
 
-/** Rereads the config on the daemon; config errors show in the banner below, other failures next to the button. */
-export function ReloadButton() {
+const menuItem =
+  "flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-zinc-700 hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-zinc-800";
+
+/**
+ * The menu on the right of the header: reloading the config and signing out. The outcome of a reload shows next to
+ * the menu button for a few seconds (config errors go to the banner below the header).
+ */
+export function HeaderMenu() {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
   const reload = useReload();
   const { isSuccess, isError, reset } = reload;
   useEffect(() => {
@@ -57,6 +63,21 @@ export function ReloadButton() {
     const t = setTimeout(reset, 5000);
     return () => clearTimeout(t);
   }, [isSuccess, isError, reset]);
+  useEffect(() => {
+    if (!open) return;
+    const onPointer = (e: PointerEvent) => {
+      if (!root.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
   return (
     <>
       {reload.isError && (
@@ -65,16 +86,64 @@ export function ReloadButton() {
         </span>
       )}
       {reload.data?.ok && <span role="status">config reloaded</span>}
-      <button
-        type="button"
-        className="hover:text-zinc-900 disabled:opacity-40 dark:hover:text-zinc-100"
-        disabled={reload.isPending}
-        title="Reread the config files on the daemon"
-        onClick={() => reload.mutate()}
-      >
-        Reload config
-      </button>
+      <div ref={root} className="relative">
+        <button
+          type="button"
+          className="flex rounded p-1 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+          aria-label="Menu"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+        >
+          <Icon path={mdiDotsVertical} className="size-5" />
+        </button>
+        {open && (
+          <div
+            role="menu"
+            className="absolute right-0 z-10 mt-1 w-44 rounded border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
+          >
+            <button
+              type="button"
+              role="menuitem"
+              className={menuItem}
+              disabled={reload.isPending}
+              title="Reread the config files on the daemon"
+              onClick={() => {
+                reload.mutate();
+                setOpen(false);
+              }}
+            >
+              <Icon path={mdiReload} />
+              Reload config
+            </button>
+            <button type="button" role="menuitem" className={menuItem} onClick={() => clearToken()}>
+              <Icon path={mdiLogout} />
+              Sign out
+            </button>
+          </div>
+        )}
+      </div>
     </>
+  );
+}
+
+export function Footer() {
+  const { data: status } = useStatus();
+  return (
+    <footer className="border-t border-zinc-200 dark:border-zinc-800">
+      <div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-3 text-xs text-zinc-500">
+        {status && <span title={`up since ${formatTime(status.startedAt)}`}>rescaded {status.version}</span>}
+        <a
+          href="https://github.com/artss/rescade"
+          target="_blank"
+          rel="noreferrer"
+          className="ml-auto flex items-center gap-1 hover:text-zinc-900 dark:hover:text-zinc-100"
+        >
+          <Icon path={mdiGithub} />
+          GitHub
+        </a>
+      </div>
+    </footer>
   );
 }
 
