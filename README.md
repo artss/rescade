@@ -194,3 +194,14 @@ The design and all decisions are in `docs/DESIGN.md`; `CLAUDE.md` carries the co
     packages/daemon the `rescaded` daemon: HTTP API (Fastify), signals, startup checks
     packages/cli    the `rescade` command
     examples/config a complete example config
+
+## License
+
+[Apache License 2.0](LICENSE). Copyright 2026 Arts (https://github.com/artss).
+
+Redistributions and derivative works must keep the [`NOTICE`](NOTICE) file with the link to
+https://github.com/artss/rescade.
+
+The Docker image also contains [restic](https://github.com/restic/restic) (BSD 2-Clause); its license
+is in `/usr/share/licenses/restic/LICENSE` inside the image, rescade's own `LICENSE` and `NOTICE`
+are in `/usr/share/licenses/rescade/`.

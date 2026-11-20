@@ -35,6 +35,7 @@ API под `/api`, остальные пути отдают собранный �
 
 Шаги 1–7 из DESIGN.md сделаны. Шаг 8: `Dockerfile`, `.github/workflows/ci.yaml` (тесты, затем образ
 в `ghcr.io/artss/rescade` для amd64/arm64), пример `examples/docker`. Виджет для homepage: `GET /api/summary` (плоские счётчики для `customapi`), конфиг в README.
+Лицензия Apache-2.0 (`LICENSE`, `NOTICE` со ссылкой на репо, в образе в `/usr/share/licenses/` вместе с лицензией restic).
 Отложено: экран логов демона, уведомления, веб-редактор конфига.
 
 Шаг 9 (восстановление): просмотр снапшотов и restore в ядре, API и CLI сделаны (`runRestore`/`restoreStep` в
