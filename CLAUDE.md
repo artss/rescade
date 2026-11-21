@@ -30,13 +30,13 @@ API под `/api`, остальные пути отдают собранный �
 `/api/repos/:name/snapshots[/:id/ls]`, CLI `snapshots` и `ls`, страница репо `pages/Repo.tsx` (состояние и снапшоты, ссылка с имени на `/repos`),
 снапшот деревом `components/SnapshotTree.tsx` (`@headless-tree`, подгрузка каталога при раскрытии, чекбоксы для restore, логика выбора в `selection.ts`); у шага backup поле
 `repo`, схема базы v2 с миграцией в `Store.open`). Бэкенды restic (`src/config/backends.ts`: префикс `path`, опции по бэкенду, конфликты `env`/`options` в парах
-`copy`/`from`; описание в `docs/backends.md`). 295 тестов vitest (проекты `node` и `web`), фейковый restic в `packages/core/test/fake-restic.mjs`, 9 интеграционных с настоящим restic
+`copy`/`from`; описание в `docs/backends.md`). 315 тестов vitest (проекты `node` и `web`), фейковый restic в `packages/core/test/fake-restic.mjs`, 9 интеграционных с настоящим restic
 (проверено на 0.19.1), пример в `examples/config`.
 
 Шаги 1–7 из DESIGN.md сделаны. Шаг 8: `Dockerfile`, `.github/workflows/ci.yaml` (тесты, затем образ
 в `ghcr.io/artss/rescade` для amd64/arm64), пример `examples/docker`. Виджет для homepage: `GET /api/summary` (плоские счётчики для `customapi`), конфиг в README.
 Лицензия Apache-2.0 (`LICENSE`, `NOTICE` со ссылкой на репо, в образе в `/usr/share/licenses/` вместе с лицензией restic).
-Отложено: экран логов демона, уведомления, веб-редактор конфига.
+Отложено: экран логов демона, веб-редактор конфига.
 
 Шаг 9 (восстановление): просмотр снапшотов и restore в ядре, API и CLI сделаны (`runRestore`/`restoreStep` в
 `src/run/cascade.ts`, `Runner.restore`, запуск без `cascade` с полем `restore`, схема базы v3, `--restore-dir` /
@@ -49,6 +49,12 @@ API под `/api`, остальные пути отдают собранный �
 
 Перезагрузка конфига без перезапуска: SIGHUP, `POST /api/reload` (200 с `{ at, ok, errors }`, перезагрузки
 по одной), CLI `reload`, пункт Reload config в меню шапки веба (`HeaderMenu` в `Layout.tsx`, там же Sign out; версия демона и ссылка на GitHub в футере).
+
+Уведомления в Telegram (см. DESIGN.md): секция `notifications` в YAML (схема в `config/schema.ts`, ссылки на каскады
+в `semantic.ts`), `packages/daemon/src/notify.ts` (`Notifier`: подписчик на `Runner`, проверки репо, итоги reload,
+очередь на уведомление с повторами), `Store.previousOutcome` для `recovered`, `markInterrupted` возвращает записи,
+`RESCADE_PUBLIC_URL` для ссылок, `POST /api/notifications/:name/test`, CLI `notify-test`. В тестах фейковый Bot API
+`packages/daemon/test/telegram.ts`, адрес через `DaemonOptions.telegramApi`.
 
 Страницы истории: `offset` и `Store.countRuns`, у `GET /api/runs` заголовок `X-Total-Count` (открыт для CORS),
 в вебе `?page=` в URL и переключатель Newer/Older в `pages/Runs.tsx` (`paging.ts`).
@@ -164,3 +170,6 @@ SIGHUP, `interrupted` после `docker stop` и после `kill -9`). Рел�
   Клик по строке (`getProps().onClick`) раскрывает каталог, поэтому у чекбокса `stopPropagation`.
 - В режиме `--allow-missing-env` значения подменяются на `<NAME is unset>`: годится для валидации, не для запуска
   (список в `LoadResult.missingEnv`).
+- Токен Telegram стоит в URL Bot API (`/bot<token>/sendMessage`): ошибку `fetch` описываем по `cause.code`, а не
+  целиком, и URL в лог не пишем. Очереди уведомлений свои у каждого, поэтому порядок сообщений гарантирован только
+  внутри одного уведомления.

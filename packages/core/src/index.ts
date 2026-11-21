@@ -5,7 +5,7 @@ export type { Diagnostic, Severity } from "./config/diagnostics.js";
 export { expandString } from "./config/expand.js";
 export { formatDuration, parseDuration } from "./config/schema.js";
 export type * from "./config/types.js";
-export { DEFAULT_RUN_TIMEOUT_MS } from "./config/types.js";
+export { DEFAULT_NOTIFY_EVENTS, DEFAULT_RUN_TIMEOUT_MS, NOTIFY_EVENTS } from "./config/types.js";
 export { MAX_RESTORE_PATHS, runCascade, runRestore, describeStep, restoreStep, restoreTarget, stepRepos } from "./run/cascade.js";
 export type {
   LogStream,

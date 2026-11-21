@@ -15,6 +15,7 @@ import {
   type Config,
   type RunnerEvent,
 } from "@rescade/core";
+import { Notifier } from "./notify.js";
 import { RepoStates } from "./repos.js";
 import { buildServer, type DaemonStatus, type ReloadResult } from "./server.js";
 import { allowedHosts, type Settings } from "./settings.js";
@@ -39,11 +40,17 @@ export interface DaemonOptions {
   webDir?: string | null;
   killGraceMs?: number;
   heartbeatMs?: number;
+  /** Bot API base for tests (default https://api.telegram.org). */
+  telegramApi?: string;
+  /** Waits between attempts to send a notification. */
+  notifyRetryDelaysMs?: number[];
 }
 
 export class StartupError extends Error {}
 
 const PRUNE_INTERVAL_MS = 60 * 60 * 1000;
+/** How long the stop waits for notifications still being sent. */
+const NOTIFY_FLUSH_MS = 5_000;
 
 /** The build of @rescade/web, when there is one. */
 function findWebDir(): string | undefined {
@@ -74,9 +81,20 @@ export async function startDaemon(settings: Settings, logger: Logger, options: D
   await mkdir(settings.dataDir, { recursive: true, mode: 0o700 });
   const store = await Store.open(path.join(settings.dataDir, "rescade.db"));
   let pruneTimer: NodeJS.Timeout | undefined;
+  const notifier = new Notifier({
+    config: () => config,
+    store,
+    logger,
+    ...(settings.publicUrl === undefined ? {} : { publicUrl: settings.publicUrl }),
+    ...(options.telegramApi === undefined ? {} : { telegramApi: options.telegramApi }),
+    ...(options.notifyRetryDelaysMs === undefined ? {} : { retryDelaysMs: options.notifyRetryDelaysMs }),
+  });
   try {
     const interrupted = store.markInterrupted(Date.now());
-    if (interrupted > 0) logger.warn({ runs: interrupted }, "marked runs left from the previous start as interrupted");
+    if (interrupted.length > 0) logger.warn({ runs: interrupted.length }, "marked runs left from the previous start as interrupted");
+    for (const run of interrupted) notifier.runFinished(run);
+    const names = Object.keys(config.notifications);
+    if (names.length > 0) logger.info({ notifications: names }, "notifications are on");
     const prune = () => {
       try {
         const r = store.prune({ now: Date.now(), historyMs: settings.historyRetentionMs, logMs: settings.logRetentionMs });
@@ -94,7 +112,10 @@ export async function startDaemon(settings: Settings, logger: Logger, options: D
       env: options.env,
       killGraceMs: options.killGraceMs,
       repoCheckTimeoutMs: settings.repoCheckTimeoutMs,
-      onRepoChecked: (repo: string, result: Parameters<RepoStates["update"]>[1]) => repos.update(repo, result, Date.now()),
+      onRepoChecked: (repo: string, result: Parameters<RepoStates["update"]>[1]) => {
+        repos.update(repo, result, Date.now());
+        notifier.repoChecked(repo, result);
+      },
     };
     const restic = await checkResticVersion(settings.restic, options.env);
     if (restic.warning !== undefined) logger.warn({ restic: settings.restic, version: restic.version }, restic.warning);
@@ -129,6 +150,7 @@ export async function startDaemon(settings: Settings, logger: Logger, options: D
       if (e.kind === "repo") repos.update(e.repo, e.result, e.at);
       logEvent(logger, e);
     });
+    runner.subscribe(notifier.onRunnerEvent);
 
     const scheduler = new Scheduler((cascade) => {
       try {
@@ -155,6 +177,7 @@ export async function startDaemon(settings: Settings, logger: Logger, options: D
       status.config.lastReload = result;
       if (!next) {
         logger.error("config reload failed, keeping the current config");
+        notifier.reloaded(result);
         return result;
       }
       config = next;
@@ -162,6 +185,7 @@ export async function startDaemon(settings: Settings, logger: Logger, options: D
       runner.setConfig(next);
       scheduler.update(next.cascades);
       logger.info({ cascades: Object.keys(next.cascades).length }, "config reloaded");
+      notifier.reloaded(result);
       return result;
     };
 
@@ -175,6 +199,7 @@ export async function startDaemon(settings: Settings, logger: Logger, options: D
       scheduler,
       store,
       repos,
+      notifier,
       restic: { binary: settings.restic, env: options.env, killGraceMs: options.killGraceMs, repoCheckTimeoutMs: settings.repoCheckTimeoutMs },
       token: settings.token,
       allowedHosts: hosts,
@@ -202,6 +227,8 @@ export async function startDaemon(settings: Settings, logger: Logger, options: D
           scheduler.stop();
           clearInterval(pruneTimer);
           await runner.stop();
+          // the runs interrupted just now are told too
+          await notifier.stop(NOTIFY_FLUSH_MS);
           await app.close();
           store.close();
           logger.info("stopped");
@@ -211,6 +238,8 @@ export async function startDaemon(settings: Settings, logger: Logger, options: D
     };
   } catch (e) {
     clearInterval(pruneTimer);
+    // repos that stopped the start may have been told about
+    await notifier.stop(NOTIFY_FLUSH_MS);
     store.close();
     throw e;
   }

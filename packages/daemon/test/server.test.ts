@@ -111,6 +111,9 @@ cascades:
       - prune: { repo: a, max-unused: 5% }
       - check: { repo: a, read-data-subset: 1/10 }
       - copy: { from: a, to: b }
+notifications:
+  ops: { type: telegram, token: "1:x", chat: 1 }
+  broken: { type: telegram, token: "1:x", chat: nowhere }
 `,
   );
   const loaded = await loadConfig({ path: file });
@@ -155,6 +158,11 @@ cascades:
     scheduler: { nextRun: () => new Date(5000) },
     store: { runs: () => [run], countRuns: () => 1, run: () => ({ ...run, steps: [step] }), log: () => [log] },
     repos,
+    notifier: {
+      test: async (n: { chat: string }) => {
+        if (n.chat === "nowhere") throw new Error("Telegram answered: Bad Request: chat not found");
+      },
+    },
     restic: { binary: FAKE_RESTIC, env: fake.env() },
     token: TOKEN,
     allowedHosts: new Set([HOST]),
@@ -191,6 +199,7 @@ describe("response schemas", () => {
   it.each([
     ["GET", "/api/status", 200],
     ["POST", "/api/reload", 200],
+    ["POST", "/api/notifications/ops/test", 200],
     ["GET", "/api/cascades", 200],
     ["POST", "/api/cascades/daily/run", 202],
     ["GET", "/api/runs", 200],
@@ -412,6 +421,19 @@ describe("reload", () => {
   });
 });
 
+describe("notification test", () => {
+  it("sends through the named notification and passes on what Telegram said", async () => {
+    const ok = await call("POST", "/api/notifications/ops/test");
+    expect(ok.status).toBe(200);
+    expect(ok.body.sentAt).toBeTypeOf("number");
+    expect(await call("POST", "/api/notifications/broken/test")).toEqual({
+      status: 502,
+      body: { error: "Telegram answered: Bad Request: chat not found" },
+    });
+    expect(await call("POST", "/api/notifications/nope/test")).toEqual({ status: 404, body: { error: 'unknown notification "nope"' } });
+  });
+});
+
 describe("web UI", () => {
   let web: FastifyInstance;
   beforeAll(async () => {
@@ -513,6 +535,7 @@ describe("OpenAPI document", () => {
       "GET /api/status",
       "GET /api/summary",
       "POST /api/cascades/{name}/run",
+      "POST /api/notifications/{name}/test",
       "POST /api/reload",
       "POST /api/repos/{name}/snapshots/{id}/restore",
       "POST /api/runs/{id}/cancel",

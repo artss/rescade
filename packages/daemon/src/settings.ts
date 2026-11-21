@@ -27,6 +27,8 @@ export interface Settings {
   extraHosts: string[] | undefined;
   /** Origins that may call the API from a browser. */
   corsOrigins: Set<string>;
+  /** Where people open the web UI (no trailing slash), for links in notifications. */
+  publicUrl?: string;
   logLevel: string;
 }
 
@@ -57,6 +59,8 @@ Environment:
                                comma-separated: "host:port" only on that port, "host" on any port;
                                unset or empty = any host
   RESCADE_CORS_ORIGINS         origins allowed to call the API from a browser, comma-separated
+  RESCADE_PUBLIC_URL           address of the web UI as people open it, e.g. "https://backup.example.com",
+                               for links in notifications (unset = no links)
 
 Signals: SIGHUP reloads the config, SIGTERM stops (runs in progress end as interrupted).
 `;
@@ -125,6 +129,7 @@ export async function readSettings(
     token: await readToken(values["token-file"], env, warn),
     extraHosts: optionalList(env.RESCADE_ALLOWED_HOSTS),
     corsOrigins: new Set(list(env.RESCADE_CORS_ORIGINS)),
+    ...publicUrl(env.RESCADE_PUBLIC_URL),
     logLevel,
   };
 }
@@ -147,6 +152,20 @@ async function restoreDir(dir: string | undefined): Promise<{ restoreDir?: strin
     }
   }
   return { restoreDir: full };
+}
+
+function publicUrl(value: string | undefined): { publicUrl?: string } {
+  if (value === undefined || value.trim() === "") return {};
+  let url: URL;
+  try {
+    url = new URL(value.trim());
+  } catch {
+    url = new URL("invalid:");
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new SettingsError(`RESCADE_PUBLIC_URL: expected an http(s) address such as "https://backup.example.com", got "${value}"`);
+  }
+  return { publicUrl: url.href.replace(/\/+$/, "") };
 }
 
 /** "127.0.0.1:8765", "[::1]:8765", "localhost:8765". */

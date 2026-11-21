@@ -19,6 +19,7 @@ import {
   listRuns,
   listSnapshots,
   reloadConfig,
+  testNotification,
   rerunRemote,
   restoreRemote,
   runRemote,
@@ -37,6 +38,7 @@ Usage:
   rescade run <cascade> [--detach]    start a cascade and follow it (Ctrl+C cancels it)
   rescade status                      the daemon, its config, cascades with their last and next runs
   rescade reload                      make the daemon reread its config (as SIGHUP does)
+  rescade notify-test <name>          send a test message through a notification of the config
   rescade runs [--cascade <name>] [--limit <n>] [--before <id>]
   rescade show <run>                  a run and its steps
   rescade log <run> [--step <n>]      the log of a run (steps count from 1)
@@ -125,7 +127,7 @@ async function validate(argv: string[]): Promise<number> {
     const s = summarize(result.config)!;
     const w = warnings > 0 ? `, ${warnings} warning${warnings === 1 ? "" : "s"}` : "";
     console.log(
-      `ok: ${s.repos} repos, ${s.sets} sets, ${s.cascades} cascades from ${result.files.length} file${result.files.length === 1 ? "" : "s"}${w}`,
+      `ok: ${s.repos} repos, ${s.sets} sets, ${s.cascades} cascades${s.notifications > 0 ? `, ${s.notifications} notifications` : ""} from ${result.files.length} file${result.files.length === 1 ? "" : "s"}${w}`,
     );
     return 0;
   }
@@ -316,6 +318,7 @@ async function connect(values: { url?: string; "token-file"?: string }): Promise
 const ARITY: Record<string, [number, number, string]> = {
   status: [0, 0, "takes no arguments"],
   reload: [0, 0, "takes no arguments"],
+  "notify-test": [1, 1, "needs one notification name"],
   runs: [0, 0, "takes no arguments"],
   repos: [0, 0, "takes no arguments"],
   show: [1, 1, "needs one run id"],
@@ -325,7 +328,7 @@ const ARITY: Record<string, [number, number, string]> = {
   ls: [2, 3, "needs a repo, a snapshot id and optionally a path"],
 };
 
-/** Commands that only ask the daemon: status, reload, runs, show, log, cancel, repos, snapshots, ls. */
+/** Commands that only ask the daemon: status, reload, notify-test, runs, show, log, cancel, repos, snapshots, ls. */
 async function remote(command: string, argv: string[]): Promise<number> {
   let parsed;
   try {
@@ -377,6 +380,8 @@ async function remote(command: string, argv: string[]): Promise<number> {
       return status(client, values.json);
     case "reload":
       return reloadConfig(client, values.json);
+    case "notify-test":
+      return testNotification(client, id, values.json);
     case "runs":
       return listRuns(client, { cascade: values.cascade, limit: values.limit, before: values.before }, values.json);
     case "show":
@@ -400,6 +405,7 @@ function summarize(config: Awaited<ReturnType<typeof loadConfig>>["config"]) {
     repos: Object.keys(config.repos).length,
     sets: Object.keys(config.sets).length,
     cascades: Object.keys(config.cascades).length,
+    notifications: Object.keys(config.notifications).length,
   };
 }
 
@@ -416,6 +422,7 @@ async function main(argv: string[]): Promise<number> {
       return restore(rest);
     case "status":
     case "reload":
+    case "notify-test":
     case "runs":
     case "show":
     case "log":

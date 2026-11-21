@@ -1,0 +1,18 @@
+# Telegram messages when something goes wrong. Create a bot with @BotFather, add it to the chat,
+# and check the setup with `rescade notify-test ops`. Links to runs need RESCADE_PUBLIC_URL on the daemon.
+notifications:
+  ops:
+    type: telegram
+    token: ${TELEGRAM_BOT_TOKEN}
+    chat: "-1001234567890"   # a chat id or "@channel"
+    # events by default: failed, interrupted, warning, recovered, reload-failed, repo-problem
+    # (also: skipped, cancelled, success)
+
+  # only the offsite copies, into a topic of a forum group, failures only
+  offsite:
+    type: telegram
+    token: ${TELEGRAM_BOT_TOKEN}
+    chat: "-1001234567890"
+    thread: 12
+    events: [failed, interrupted]
+    cascades: [system, home]

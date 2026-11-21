@@ -400,3 +400,11 @@ export async function listDir(client: ApiClient, repo: string, snapshot: string,
   if (result.truncated) console.log(`(only the first ${result.entries.length} entries are shown)`);
   return 0;
 }
+
+/** Sends a test message through a notification; a refusal of Telegram comes back as the daemon's error. */
+export async function testNotification(client: ApiClient, name: string, json: boolean): Promise<number> {
+  const result = await client.post<{ sentAt: number }>(`/notifications/${encodeURIComponent(name)}/test`);
+  if (json) print(result);
+  else console.log(`test message sent through "${name}"`);
+  return 0;
+}

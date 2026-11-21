@@ -109,7 +109,8 @@ Fastify (+ `@fastify/swagger`: OpenAPI по схемам маршрутов, `@f
 - Настройки сервиса через env/флаги, не YAML: `RESCADE_ADDR`, `RESCADE_URL`, `RESCADE_TOKEN_FILE`, `RESCADE_TOKEN`,
   `RESCADE_CONFIG_DIR`, `RESCADE_DATA_DIR` (по умолчанию `/var/lib/rescade`, база `rescade.db`),
   `RESCADE_HISTORY_RETENTION` / `RESCADE_LOG_RETENTION` (срок хранения истории и логов),
-  путь к restic (`RESCADE_RESTIC`), таймаут проверки репо (`RESCADE_REPO_CHECK_TIMEOUT`), `RESCADE_LOG_LEVEL`.
+  путь к restic (`RESCADE_RESTIC`), таймаут проверки репо (`RESCADE_REPO_CHECK_TIMEOUT`), `RESCADE_LOG_LEVEL`,
+  `RESCADE_PUBLIC_URL` (адрес веб-интерфейса снаружи, для ссылок в уведомлениях).
 - Клиент ищет токен: `--token-file`, `RESCADE_TOKEN`, `RESCADE_TOKEN_FILE`, `~/.config/rescade/token`. Сервер: `--token-file`,
   `RESCADE_TOKEN`, `RESCADE_TOKEN_FILE`, `/etc/rescade/token`. Предупреждение, если права на файл слишком широкие.
 - API под префиксом `/api`, остальные пути принадлежат веб-интерфейсу: файлы сборки, а для путей без расширения
@@ -118,7 +119,7 @@ Fastify (+ `@fastify/swagger`: OpenAPI по схемам маршрутов, `@f
 - Эндпоинты: `GET /api/status`, `GET /api/cascades`, `GET /api/runs`, `GET /api/runs/:id`, `GET /api/runs/:id/log?step=&after=`,
   `POST /api/cascades/:name/run`, `POST /api/runs/:id/cancel`, `POST /api/runs/:id/rerun`, `GET /api/repos`, `GET /api/repos/:name/snapshots`,
   `GET /api/repos/:name/snapshots/:id/ls?path=`, `POST /api/repos/:name/snapshots/:id/restore`, `GET /api/events` (SSE),
-  `POST /api/reload`, `GET /api/openapi.json`, Swagger UI на `/api/docs`. Перезагрузка конфига по SIGHUP или
+  `POST /api/reload`, `POST /api/notifications/:name/test`, `GET /api/openapi.json`, Swagger UI на `/api/docs`. Перезагрузка конфига по SIGHUP или
   `POST /api/reload`; ошибка в новом конфиге оставляет старый. Запуски, уже идущие, доживают со старым конфигом.
   Перезагрузки идут по одной (вторая ждёт первую), иначе два чтения, закончившись не по порядку, оставили бы старый.
 - `POST /api/reload` отвечает, когда конфиг прочитан: 200 с `{ at, ok, errors }` и при ошибках в конфиге (это итог
@@ -148,7 +149,37 @@ Fastify (+ `@fastify/swagger`: OpenAPI по схемам маршрутов, `@f
   и логом, у запусков старше `RESCADE_LOG_RETENTION` (по умолчанию `30d`) удаляются только строки лога (`stderrTail`
   остаётся в шаге). `0` = без ограничения. Последний запуск каждого каскада и идущие запуски не удаляются никогда.
   Чистка при старте демона и раз в час. Логи самого демона пишутся в stdout, их ротирует journald.
-- Уведомления отложены (пока статус запрашивается вручную); позже как подписчики на поток событий.
+- Уведомления: см. раздел «Уведомления».
+
+## Уведомления
+
+- Секция `notifications` в YAML (сливается по имени, как остальные; перечитывается при reload). Пока один тип,
+  `type: telegram` (поле обязательно, чтобы другие типы добавлялись без поломки): `token` (через `${VAR}`), `chat`
+  (id числом или строкой, `@channel`), `thread` (тема в группе, `message_thread_id`), `events`, `cascades`.
+- События: `failed`, `interrupted`, `warning`, `recovered`, `reload-failed`, `repo-problem` (это набор по умолчанию),
+  по явному выбору ещё `skipped`, `cancelled`, `success`. `cascades` ограничивает запуски этими каскадами, а события
+  репо и restore теми репо, которые эти каскады трогают (`stepRepos`). `reload-failed` фильтру не подчиняется.
+- Запуск: сообщение, когда запуск закончился со статусом из `events`, при любом триггере. `recovered` = первый
+  `success`/`warning` каскада после `failed`/`interrupted` (`Store.previousOutcome`, `skipped`/`cancelled` между ними
+  не считаются); у такого запуска одно сообщение, о восстановлении, даже если его статус тоже в `events`.
+  Запуски, помеченные `interrupted` при старте после падения, тоже уходят в уведомления.
+- Restore (запускается руками) уведомляет только о `failed`/`interrupted`.
+- `repo-problem`: переход репо из ok или «ещё не проверялся» в любую проблему (кроме `cancelled`), обратно = `recovered`.
+  Состояние в памяти уведомителя, повторные проверки перед шагами не спамят; после перезапуска демона о плохом репо
+  сообщается снова (при прогреве).
+- `reload-failed`: каждая неудачная перезагрузка, в сообщении первые 5 ошибок; следующая удачная = `recovered`.
+- Сообщение HTML (`parse_mode`), подставляемое экранируется: значок, каскад и статус, причина (обрезается до 1500
+  символов), триггер, длительность, имя хоста (`os.hostname()`, чтобы несколько демонов могли писать в один чат),
+  ссылка `<RESCADE_PUBLIC_URL>/runs/<id>` (или `/repos/<name>`), если задан `RESCADE_PUBLIC_URL`.
+- Отправка в демоне (`packages/daemon/src/notify.ts`, `fetch` к Bot API; ядро без сети). Очередь на каждое
+  уведомление, порядок внутри неё сохраняется; исполнение не ждёт отправку. Таймаут 10 с; повтор при сетевой ошибке,
+  5xx и 429 (по `retry_after`), всего 3 попытки, потом ошибка в лог и сообщение выбрасывается; 4xx не повторяется.
+  Токен стоит в URL, поэтому в ошибки и лог URL не попадает. При остановке демон ждёт очереди до 5 с (чтобы ушли
+  `interrupted` от самой остановки), остальное выбрасывает.
+- Проверка: `validate` в сеть не ходит (схема, ссылки на каскады, формат токена = предупреждение);
+  `POST /api/notifications/:name/test` и `rescade notify-test <name>` шлют пробное сообщение один раз, без повторов,
+  ошибка Telegram возвращается как есть (502).
+- Не сделано: ошибка последней доставки в статусе и вебе.
 
 ## Просмотр снапшотов
 

@@ -33,11 +33,13 @@ Settings come from flags or the environment, never from the YAML: `--addr` / `RE
 `--config-dir` / `RESCADE_CONFIG_DIR`, `--data-dir` / `RESCADE_DATA_DIR`, `--restic` / `RESCADE_RESTIC`,
 `--restore-dir` / `RESCADE_RESTORE_DIR` (the directory to restore into, created if missing; unset = restore is off), `--token-file` / `RESCADE_TOKEN_FILE` (or the token itself in `RESCADE_TOKEN`), `--log-level` /
 `RESCADE_LOG_LEVEL`, `RESCADE_REPO_CHECK_TIMEOUT` (default `2m`), `RESCADE_ALLOWED_HOSTS` (Host header
-values to accept: `host:port` on that port, `host` on any; unset = any host), `RESCADE_CORS_ORIGINS`. See `rescaded --help`.
+values to accept: `host:port` on that port, `host` on any; unset = any host), `RESCADE_CORS_ORIGINS`,
+`RESCADE_PUBLIC_URL` (the web UI as people open it, for links in notifications). See `rescaded --help`.
 
 The API lives under `/api` and needs `Authorization: Bearer <token>` on every request:
 `GET /api/status`, `GET /api/cascades`, `GET /api/runs?cascade=&limit=&before=`, `GET /api/runs/:id`,
 `GET /api/runs/:id/log?step=&after=`, `POST /api/cascades/:name/run`, `POST /api/runs/:id/cancel`,
+`POST /api/reload`, `POST /api/notifications/:name/test`,
 `GET /api/repos`, `GET /api/repos/:name/snapshots`, `GET /api/repos/:name/snapshots/:id/ls?path=`,
 `POST /api/repos/:name/snapshots/:id/restore` (body `{ "paths": [...] }`, optional), `GET /api/summary` (flat counts for dashboards), `GET /api/events?run=|cascade=` (server-sent events). The OpenAPI document is at
 `/api/openapi.json`, Swagger UI at `/api/docs` and the health check at `/api/health`, all without the token.
@@ -82,6 +84,7 @@ mounted read-only, history and restic's cache in a volume.
     rescade run <cascade> [--detach]    # start and follow; Ctrl+C cancels the run
     rescade status                      # the daemon, its config, cascades with their last and next runs
     rescade reload                      # reread the config; prints the errors and keeps the old one if it is broken
+    rescade notify-test <name>          # send a test message through a notification
     rescade runs [--cascade <name>] [--limit <n>]
     rescade show <run>
     rescade log <run> [--step <n>]
@@ -107,8 +110,8 @@ Exit codes:
 ## Config
 
 A directory of `*.yaml` / `*.yml` files (or a single file), set with `--config-dir` or
-`RESCADE_CONFIG_DIR`. Each file is parsed on its own and the entries of `repos`, `sets` and `cascades`
-are merged by name. The same name in two files is an error, and so is an unknown key.
+`RESCADE_CONFIG_DIR`. Each file is parsed on its own and the entries of `repos`, `sets`, `cascades` and
+`notifications` are merged by name. The same name in two files is an error, and so is an unknown key.
 
 - `${VAR}` and `${VAR:-default}` are expanded in values (not keys); `$$` is a literal `$`.
   Unset variables are errors. Inside `{}` or `[]` the reference must be quoted: `{ password: "${PW}" }`.
@@ -126,6 +129,28 @@ are merged by name. The same name in two files is an error, and so is an unknown
   only runs on demand. Missed times are not caught up.
 
 See `examples/config` for a complete example.
+
+## Notifications
+
+Telegram messages when a run fails, is interrupted or ends with a warning, when it works again after
+that, when a config reload fails and when a repo gets a problem (unreachable, wrong password...):
+
+```yaml
+notifications:
+  ops:
+    type: telegram
+    token: ${TELEGRAM_BOT_TOKEN}   # from @BotFather; add the bot to the chat
+    chat: "-1001234567890"         # chat id or "@channel"
+    thread: 12                     # optional: a topic in a forum group
+    events: [failed, interrupted]  # optional; default: failed, interrupted, warning, recovered,
+                                   # reload-failed, repo-problem; also skipped, cancelled, success
+    cascades: [system]             # optional: only these cascades (and restores and checks of their repos)
+```
+
+Failed restores are told too. A repo is reported when it goes from ok to a problem and when it is ok
+again, not on every check. Messages carry the host name and, with `RESCADE_PUBLIC_URL` set, a link to the
+run. Sending never holds up a run; a message Telegram does not take after 3 attempts is logged and dropped.
+Check the setup with `rescade notify-test ops`.
 
 ## How runs behave
 
