@@ -155,7 +155,7 @@ Fastify (+ `@fastify/swagger`: OpenAPI по схемам маршрутов, `@f
 
 - Секция `notifications` в YAML (сливается по имени, как остальные; перечитывается при reload). Пока один тип,
   `type: telegram` (поле обязательно, чтобы другие типы добавлялись без поломки): `token` (через `${VAR}`), `chat`
-  (id числом или строкой, `@channel`), `thread` (тема в группе, `message_thread_id`), `events`, `cascades`.
+  (id числом или строкой, `@channel`), `thread` (тема в группе, `message_thread_id`; число или строка из цифр, чтобы брать из `${VAR}`, пустая строка = без темы), `events`, `cascades`.
 - События: `failed`, `interrupted`, `warning`, `recovered`, `reload-failed`, `repo-problem` (это набор по умолчанию),
   по явному выбору ещё `skipped`, `cancelled`, `success`. `cascades` ограничивает запуски этими каскадами, а события
   репо и restore теми репо, которые эти каскады трогают (`stepRepos`). `reload-failed` фильтру не подчиняется.

@@ -141,7 +141,7 @@ notifications:
     type: telegram
     token: ${TELEGRAM_BOT_TOKEN}   # from @BotFather; add the bot to the chat
     chat: "-1001234567890"         # chat id or "@channel"
-    thread: 12                     # optional: a topic in a forum group
+    thread: 12                     # optional: a topic in a forum group (a number, or ${VAR}; empty = none)
     events: [failed, interrupted]  # optional; default: failed, interrupted, warning, recovered,
                                    # reload-failed, repo-problem; also skipped, cancelled, success
     cascades: [system]             # optional: only these cascades (and restores and checks of their repos)

@@ -562,6 +562,26 @@ describe("notifications", () => {
     });
   });
 
+  it("takes the thread from an environment variable, and no thread from an empty one", async () => {
+    const yaml = (n: string) =>
+      `notifications:\n  ${n}:\n    type: telegram\n    token: "${TOKEN}"\n    chat: \${CHAT}\n    thread: \${THREAD${n === "b" ? ":-" : ""}}\n`;
+    await write({ "00.yaml": head + yaml("a") + yaml("b").replace("notifications:\n", "") });
+    let r = await load({ PW: "x", CHAT: "-100", THREAD: "12" });
+    expect(lines(r)).toEqual([]);
+    expect(r.config!.notifications.a).toMatchObject({ chat: "-100", thread: 12 });
+    expect(r.config!.notifications.b).toMatchObject({ thread: 12 });
+
+    r = await load({ PW: "x", CHAT: "-100", THREAD: "" });
+    expect(r.config!.notifications.b).not.toHaveProperty("thread");
+
+    r = await load({ PW: "x", CHAT: "-100" }, { missingEnv: "warn" });
+    expect(r.ok).toBe(true);
+    expect(r.config!.notifications.a).not.toHaveProperty("thread");
+
+    r = await load({ PW: "x", CHAT: "-100", THREAD: "topic" });
+    expect(lines(r).join("\n")).toMatch(/00\.yaml:\d+:\d+: error: thread must be a positive integer/);
+  });
+
   it("reports bad fields, unknown cascades and duplicates with positions", async () => {
     await write({
       "00.yaml":
