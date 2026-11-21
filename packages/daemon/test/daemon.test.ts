@@ -4,8 +4,9 @@ import { Writable } from "node:stream";
 import { pino } from "pino";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Store, type RunRecord } from "@rescade/core";
-import { startDaemon, StartupError, type Daemon, type Settings } from "../src/daemon.js";
+import { startDaemon, StartupError, type Daemon, type DaemonOptions, type Settings } from "../src/daemon.js";
 import { FAKE_RESTIC, FakeState } from "../../core/test/helpers/fake.js";
+import { FakeTelegram } from "./telegram.js";
 
 const TOKEN = "test-token-0123456789";
 
@@ -49,6 +50,7 @@ async function start(
   env: Record<string, string> = {},
   extra: Partial<Settings> = {},
   webDir: string | null = null,
+  more: Partial<DaemonOptions> = {},
 ): Promise<Daemon> {
   const configFile = path.join(fake.dir, "rescade.yaml");
   await writeFile(configFile, yaml);
@@ -75,6 +77,7 @@ async function start(
     killGraceMs: 500,
     heartbeatMs: 50,
     webDir,
+    ...more,
   });
   return daemon;
 }
@@ -416,5 +419,43 @@ describe("reload and stop", () => {
       steps: [{ status: "interrupted" }],
     });
     store.close();
+  });
+});
+
+describe("notifications", () => {
+  it("tells about failed runs, runs interrupted before the start and failed reloads", async () => {
+    const tg = await FakeTelegram.start();
+    try {
+      const dataDir = path.join(fake.dir, "data");
+      await mkdir(dataDir);
+      const store = await Store.open(path.join(dataDir, "rescade.db"));
+      const left = store.insertRun({ cascade: "daily", trigger: "schedule", status: "running", startedAt: 1 });
+      store.close();
+
+      const yaml = configYaml(
+        `  broken:\n    steps:\n      - run: { command: [${JSON.stringify(process.execPath)}, -e, "process.exit(4)"] }\n` +
+          `notifications:\n  ops: { type: telegram, token: "1:t", chat: 42 }\n`,
+      );
+      await start(yaml, {}, { publicUrl: "https://b.example" }, null, { telegramApi: tg.url, notifyRetryDelaysMs: [] });
+      await tg.waitFor(1);
+      expect(tg.texts()[0]).toMatch(
+        new RegExp(`^⛔ <b>daily</b>: interrupted\nthe daemon stopped during the run\n.*\n<a href="https://b.example/runs/${left.id}">`),
+      );
+
+      const started = await api("POST", "/api/cascades/broken/run");
+      await until(() => api("GET", `/api/runs/${started.body.id}`), finished, "the run to finish");
+      await tg.waitFor(2);
+      expect(tg.texts()[1]).toMatch(/^❌ <b>broken<\/b>: failed\nrun .*exit code 4/);
+
+      await writeFile(path.join(fake.dir, "rescade.yaml"), "cascades: [");
+      await daemon!.reload();
+      await tg.waitFor(3);
+      expect(tg.texts()[2]).toMatch(/^❌ config reload failed/);
+
+      expect((await api("POST", "/api/notifications/ops/test")).status).toBe(200);
+      expect(tg.sent.map((s) => [s.token, s.body.chat_id])).toEqual(Array(4).fill(["1:t", "42"]));
+    } finally {
+      await tg.close();
+    }
   });
 });

@@ -103,10 +103,51 @@ export interface Cascade {
   steps: Step[];
 }
 
+/** What a notification can be sent about. */
+export const NOTIFY_EVENTS = [
+  "failed",
+  "interrupted",
+  "warning",
+  "recovered",
+  "reload-failed",
+  "repo-problem",
+  "skipped",
+  "cancelled",
+  "success",
+] as const;
+
+export type NotifyEvent = (typeof NOTIFY_EVENTS)[number];
+
+/** Sent when a notification does not list its events. */
+export const DEFAULT_NOTIFY_EVENTS: readonly NotifyEvent[] = [
+  "failed",
+  "interrupted",
+  "warning",
+  "recovered",
+  "reload-failed",
+  "repo-problem",
+];
+
+export interface TelegramNotification {
+  type: "telegram";
+  /** Bot token from @BotFather. */
+  token: string;
+  /** Chat id or "@channel". */
+  chat: string;
+  /** Topic in a forum group (`message_thread_id`). */
+  thread?: number;
+  events: NotifyEvent[];
+  /** Only about these cascades (and their repos); absent = all. */
+  cascades?: string[];
+}
+
+export type Notification = TelegramNotification;
+
 export interface Config {
   repos: Record<string, Repo>;
   sets: Record<string, BackupSet>;
   cascades: Record<string, Cascade>;
+  notifications: Record<string, Notification>;
 }
 
 /** Applied to `run` steps that do not set their own timeout. */

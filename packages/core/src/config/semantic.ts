@@ -1,10 +1,10 @@
 import { Cron } from "croner";
 import type { Path } from "./issues.js";
-import type { Cascade, Repo, Step } from "./types.js";
+import type { Cascade, Notification, Repo, Step } from "./types.js";
 import type { Severity } from "./diagnostics.js";
 import { sharedSettingsIssues } from "./backends.js";
 
-export type Section = "repos" | "sets" | "cascades";
+export type Section = "repos" | "sets" | "cascades" | "notifications";
 
 /** A cascade whose header is valid; each step is either valid or undefined (already reported). */
 export interface CascadeDraft {
@@ -16,9 +16,11 @@ export interface SemanticInput {
   /** Every name defined in the config, even entries that failed validation. */
   declaredRepos: Set<string>;
   declaredSets: Set<string>;
+  declaredCascades: Set<string>;
   /** Only entries that passed validation. */
   repos: Map<string, Repo>;
   cascades: Map<string, CascadeDraft>;
+  notifications: Map<string, Notification>;
 }
 
 export type Report = (
@@ -34,6 +36,11 @@ export type Report = (
 export function checkSemantics(input: SemanticInput, report: Report): void {
   checkFromChains(input, report);
   for (const [name, draft] of input.cascades) checkCascade(name, draft, input, report);
+  for (const [name, n] of input.notifications) {
+    n.cascades?.forEach((c, i) => {
+      if (!input.declaredCascades.has(c)) report("notifications", name, ["cascades", i], `unknown cascade "${c}"`);
+    });
+  }
 }
 
 /** Follows `from` links to the root repo. Returns undefined when the chain is broken or cyclic. */

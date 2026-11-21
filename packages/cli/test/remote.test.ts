@@ -147,6 +147,13 @@ describe("the CLI through the daemon", () => {
     expect((await cli(["status"])).stdout).toMatch(/^reload at .* failed/m);
   });
 
+  it("sends a test notification, telling about unknown names", async () => {
+    const unknown = await cli(["notify-test", "ops"]);
+    expect(unknown.code).toBe(1);
+    expect(unknown.stderr).toContain('unknown notification "ops"');
+    expect((await cli(["notify-test"])).code).toBe(2);
+  });
+
   it("tells when a config reload failed", async () => {
     await writeFile(path.join(fake.dir, "rescade.yaml"), "cascades: [");
     expect((await daemon!.reload()).ok).toBe(false);

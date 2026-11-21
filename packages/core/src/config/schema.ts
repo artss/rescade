@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { BackupSet, Cascade, Repo, Retention } from "./types.js";
+import { DEFAULT_NOTIFY_EVENTS, NOTIFY_EVENTS, type BackupSet, type Cascade, type Notification, type Repo, type Retention } from "./types.js";
 
 /* ---------- durations ---------- */
 
@@ -132,5 +132,33 @@ export function normalizeCascadeHeader(v: z.output<typeof CascadeSchema>): Casca
     timezone: v.timezone,
     onBusy: v["on-busy"] ?? "skip",
     waitTimeoutMs: v["wait-timeout"] === undefined ? undefined : parseDuration(v["wait-timeout"]),
+  };
+}
+
+/* ---------- notifications ---------- */
+
+export const NotificationSchema = z.strictObject({
+  type: z.literal("telegram", { error: 'type must be "telegram"' }),
+  token: z.string().min(1),
+  chat: z.union([z.string().min(1), z.number().int()]).transform((v) => String(v)),
+  thread: z.number().int().positive().optional(),
+  events: z
+    .array(z.enum(NOTIFY_EVENTS, { error: `expected one of: ${NOTIFY_EVENTS.join(", ")}` }))
+    .min(1, "list at least one event or leave events out for the default ones")
+    .optional(),
+  cascades: z.array(ref).min(1, "list at least one cascade or leave cascades out for all of them").optional(),
+});
+
+/** What a Telegram bot token looks like: "<bot id>:<secret>". */
+export const TELEGRAM_TOKEN_RE = /^\d+:[\w-]+$/;
+
+export function normalizeNotification(v: z.output<typeof NotificationSchema>): Notification {
+  return {
+    type: v.type,
+    token: v.token,
+    chat: v.chat,
+    ...(v.thread === undefined ? {} : { thread: v.thread }),
+    events: v.events === undefined ? [...DEFAULT_NOTIFY_EVENTS] : [...new Set(v.events)],
+    ...(v.cascades === undefined ? {} : { cascades: v.cascades }),
   };
 }

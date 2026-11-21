@@ -106,5 +106,6 @@ export function baseConfig(cascades: Config["cascades"] = {}): Config {
     },
     sets: { s: { include: ["/etc", "/home"], exclude: ["**/venv"], tags: ["auto"], oneFileSystem: true, excludeCaches: false } },
     cascades,
+    notifications: {},
   };
 }

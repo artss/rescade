@@ -788,6 +788,18 @@
           "errors"
         ]
       },
+      "NotificationTest": {
+        "type": "object",
+        "properties": {
+          "sentAt": {
+            "type": "integer",
+            "description": "When Telegram took the message"
+          }
+        },
+        "required": [
+          "sentAt"
+        ]
+      },
       "Status": {
         "type": "object",
         "properties": {
@@ -1232,6 +1244,74 @@
           },
           "503": {
             "description": "The daemon is stopping",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notifications/{name}/test": {
+      "post": {
+        "summary": "Send a test message through a notification of the config",
+        "description": "Sent once, without retries; a refusal of Telegram (wrong token or chat) is the error text.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "name",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Telegram took the message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationTest"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Host not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such notification",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Telegram refused the message or could not be reached",
             "content": {
               "application/json": {
                 "schema": {

@@ -101,6 +101,18 @@ describe("daemon settings", () => {
     await expect(readSettings(["--bogus"], env, () => {})).rejects.toThrow(SettingsError);
   });
 
+  it("reads the public URL of the web UI without a trailing slash", async () => {
+    const url = async (value: string) => {
+      const s = await readSettings([], { RESCADE_TOKEN: "t", RESCADE_PUBLIC_URL: value }, () => {});
+      return s !== "help" && s.publicUrl;
+    };
+    expect(await url("")).toBeUndefined();
+    expect(await url("https://backup.example.com/")).toBe("https://backup.example.com");
+    expect(await url(" http://nas.lan:8765/rescade// ")).toBe("http://nas.lan:8765/rescade");
+    await expect(url("backup.example.com")).rejects.toThrow("RESCADE_PUBLIC_URL: expected an http(s) address");
+    await expect(url("ftp://x")).rejects.toThrow("RESCADE_PUBLIC_URL");
+  });
+
   it("parses addresses", () => {
     expect(parseAddr("localhost:8765")).toEqual({ host: "localhost", port: 8765 });
     expect(parseAddr("[fe80::1]:80")).toEqual({ host: "fe80::1", port: 80 });

@@ -8,15 +8,18 @@ import { fromZod, isPlainObject, type Issue, type Path } from "./issues.js";
 import { locate, positionAt, type Source } from "./locate.js";
 import {
   CascadeSchema,
+  NotificationSchema,
   RepoSchema,
   SetSchema,
+  TELEGRAM_TOKEN_RE,
   normalizeCascadeHeader,
+  normalizeNotification,
   normalizeRepo,
   normalizeSet,
 } from "./schema.js";
 import { checkSemantics, type CascadeDraft, type Section } from "./semantic.js";
 import { validateStep } from "./steps.js";
-import type { BackupSet, Cascade, Config, Repo } from "./types.js";
+import type { BackupSet, Cascade, Config, Notification, Repo } from "./types.js";
 
 export interface LoadOptions {
   /** A directory of *.yaml / *.yml files, or a single YAML file. */
@@ -52,8 +55,8 @@ export interface LoadResult {
   origins: Record<string, Origin>;
 }
 
-const SECTIONS: readonly Section[] = ["repos", "sets", "cascades"];
-const SINGULAR: Record<Section, string> = { repos: "repo", sets: "set", cascades: "cascade" };
+const SECTIONS: readonly Section[] = ["repos", "sets", "cascades", "notifications"];
+const SINGULAR: Record<Section, string> = { repos: "repo", sets: "set", cascades: "cascade", notifications: "notification" };
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 interface Entry {
@@ -186,7 +189,8 @@ export async function loadConfig(options: LoadOptions): Promise<LoadResult> {
   const repos = new Map<string, Repo>();
   const sets = new Map<string, BackupSet>();
   const cascades = new Map<string, CascadeDraft>();
-  const cascadeEntries = new Map<string, Entry>();
+  const declaredCascades = new Set<string>();
+  const notifications = new Map<string, Notification>();
 
   for (const entry of entries.values()) {
     const { section, name, raw } = entry;
@@ -206,7 +210,19 @@ export async function loadConfig(options: LoadOptions): Promise<LoadResult> {
       const r = SetSchema.safeParse(raw);
       if (!r.success) fromZod(r.error, [], raw).forEach((i) => reportIssue(entry, i));
       else sets.set(name, normalizeSet(r.data));
+    } else if (section === "notifications") {
+      const r = NotificationSchema.safeParse(raw);
+      if (!r.success) fromZod(r.error, [], raw).forEach((i) => reportIssue(entry, i));
+      else {
+        const n = normalizeNotification(r.data);
+        // a placeholder for an unset variable is already reported
+        if (!TELEGRAM_TOKEN_RE.test(n.token) && !/^<\w+ is unset>$/.test(n.token)) {
+          reportIssue(entry, { path: ["token"], message: 'this does not look like a Telegram bot token ("123456:ABC-...")' }, "warning");
+        }
+        notifications.set(name, n);
+      }
     } else {
+      declaredCascades.add(name);
       const r = CascadeSchema.safeParse(raw);
       if (!r.success) {
         fromZod(r.error, [], raw).forEach((i) => reportIssue(entry, i));
@@ -222,13 +238,12 @@ export async function loadConfig(options: LoadOptions): Promise<LoadResult> {
         return result.step;
       });
       cascades.set(name, { header: normalizeCascadeHeader(r.data), steps });
-      cascadeEntries.set(name, entry);
     }
   }
 
   /* ---- 3. checks that look across entries ---- */
 
-  checkSemantics({ declaredRepos, declaredSets, repos, cascades }, (section, name, p, message, severity = "error", at) => {
+  checkSemantics({ declaredRepos, declaredSets, declaredCascades, repos, cascades, notifications }, (section, name, p, message, severity = "error", at) => {
     const entry = entries.get(`${section}/${name}`);
     if (entry) reportIssue(entry, { path: p, message, ...(at ? { at } : {}) }, severity);
   });
@@ -261,6 +276,7 @@ export async function loadConfig(options: LoadOptions): Promise<LoadResult> {
       repos: Object.fromEntries(repos),
       sets: Object.fromEntries(sets),
       cascades: cascadesOut,
+      notifications: Object.fromEntries(notifications),
     };
   }
   return result;

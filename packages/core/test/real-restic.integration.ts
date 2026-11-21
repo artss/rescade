@@ -52,6 +52,7 @@ function config(steps: Step[], overrides: Partial<Config["repos"]> = {}): Config
     } as Config["repos"],
     sets: { s: { include: [src], exclude: ["*.bak"], tags: ["it"], oneFileSystem: false, excludeCaches: true } },
     cascades: { c: cascade },
+    notifications: {},
   };
 }
 

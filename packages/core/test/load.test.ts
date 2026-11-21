@@ -161,8 +161,8 @@ describe("yaml problems", () => {
     await write({ "a.yaml": "reops: {}\n", "b.yaml": "- just\n- a list\n" });
     const r = await load();
     expect(lines(r)).toEqual([
-      'a.yaml:1:1: error: unknown top-level key "reops" (expected: repos, sets, cascades)',
-      "b.yaml:1:1: error: top level must be a mapping with the sections: repos, sets, cascades",
+      'a.yaml:1:1: error: unknown top-level key "reops" (expected: repos, sets, cascades, notifications)',
+      "b.yaml:1:1: error: top level must be a mapping with the sections: repos, sets, cascades, notifications",
     ]);
   });
 });
@@ -537,6 +537,56 @@ describe("cascades", () => {
     });
     const r = await load();
     expect(lines(r).join("\n")).toMatch(/unknown step action "nonsense"/);
+  });
+});
+
+describe("notifications", () => {
+  const head = REPOS + SETS + CASCADE;
+  const TOKEN = "123456:ABC-def_1";
+
+  it("reads a telegram notification with defaults and merges notifications across files", async () => {
+    await write({
+      "00.yaml": head + `notifications:\n  ops:\n    type: telegram\n    token: \${TG}\n    chat: -1001234567890\n`,
+      "01.yaml": `notifications:\n  nightly:\n    type: telegram\n    token: "${TOKEN}"\n    chat: "@backups"\n    thread: 7\n    events: [failed, success, failed]\n    cascades: [c]\n`,
+    });
+    const r = await load({ PW: "secret", TG: TOKEN });
+    expect(lines(r)).toEqual([]);
+    expect(r.config!.notifications).toEqual({
+      ops: {
+        type: "telegram",
+        token: TOKEN,
+        chat: "-1001234567890",
+        events: ["failed", "interrupted", "warning", "recovered", "reload-failed", "repo-problem"],
+      },
+      nightly: { type: "telegram", token: TOKEN, chat: "@backups", thread: 7, events: ["failed", "success"], cascades: ["c"] },
+    });
+  });
+
+  it("reports bad fields, unknown cascades and duplicates with positions", async () => {
+    await write({
+      "00.yaml":
+        head +
+        `notifications:\n  ops:\n    type: slack\n    token: "${TOKEN}"\n    chat: x\n    events: [failed, exploded]\n    cascades: [c, nope]\n  t:\n    type: telegram\n    token: "${TOKEN}"\n    chat: x\n    cascades: [nope]\n`,
+      "01.yaml": `notifications:\n  t:\n    type: telegram\n    token: x\n    chat: x\n`,
+    });
+    const r = await load();
+    expect(r.ok).toBe(false);
+    const text = lines(r).join("\n");
+    expect(text).toMatch(/00\.yaml:\d+:\d+: error: type must be "telegram"/);
+    expect(text).toMatch(/00\.yaml:\d+:\d+: error: expected one of: failed, interrupted/);
+    expect(text).toMatch(/00\.yaml:\d+:\d+: error: unknown cascade "nope"/);
+    expect(text).toMatch(/01\.yaml:2:3: error: duplicate notification "t"/);
+  });
+
+  it("warns about a token that does not look like a bot token, but not about an unset one", async () => {
+    await write({ "00.yaml": head + "notifications:\n  ops:\n    type: telegram\n    token: secret\n    chat: 1\n" });
+    expect(lines(await load())).toEqual([
+      expect.stringMatching(/00\.yaml:\d+:12: warning: this does not look like a Telegram bot token/),
+    ]);
+    await write({ "00.yaml": head + "notifications:\n  ops:\n    type: telegram\n    token: ${TG}\n    chat: 1\n" });
+    expect(lines(await load({ PW: "x" }, { missingEnv: "warn" }))).toEqual([
+      expect.stringMatching(/warning: environment variable TG is not set/),
+    ]);
   });
 });
 

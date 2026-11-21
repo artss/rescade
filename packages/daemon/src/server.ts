@@ -22,6 +22,7 @@ import {
   type Store,
 } from "@rescade/core";
 import { stepView } from "./cascades.js";
+import type { Notifier } from "./notify.js";
 import type { RepoStates } from "./repos.js";
 import { arrayOf, ref, schemas } from "./schemas.js";
 import { hostAllowed } from "./settings.js";
@@ -58,6 +59,7 @@ export interface ServerDeps {
   scheduler: Scheduler;
   store: Store;
   repos: RepoStates;
+  notifier: Notifier;
   /** How to run restic for browsing snapshots; the repos come from the current config. */
   restic: Pick<ResticContext, "binary" | "env" | "killGraceMs" | "repoCheckTimeoutMs">;
   token: string;
@@ -273,6 +275,35 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
       const result = await deps.reload();
       request.log.info({ ok: result.ok }, "config reload requested");
       return result;
+    },
+  );
+
+  app.post<{ Params: { name: string } }>(
+    `${API_PREFIX}/notifications/:name/test`,
+    {
+      schema: {
+        summary: "Send a test message through a notification of the config",
+        description: "Sent once, without retries; a refusal of Telegram (wrong token or chat) is the error text.",
+        params: nameParams,
+        response: responses(
+          200,
+          "Telegram took the message",
+          ref("NotificationTest"),
+          [404, "No such notification"],
+          [502, "Telegram refused the message or could not be reached"],
+        ),
+      },
+    },
+    async (request, reply) => {
+      const { name } = request.params;
+      const n = deps.config().notifications[name];
+      if (!n) return reply.code(404).send({ error: `unknown notification "${name}"` });
+      try {
+        await deps.notifier.test(n);
+      } catch (e) {
+        return reply.code(502).send({ error: e instanceof Error ? e.message : String(e) });
+      }
+      return { sentAt: Date.now() };
     },
   );
 

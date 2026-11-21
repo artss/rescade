@@ -191,16 +191,31 @@ export class Store {
 
   /**
    * Marks runs and steps left `running` or `queued` by a daemon that did not stop cleanly as `interrupted`.
-   * Returns how many runs that was.
+   * Returns those runs as they are now.
    */
-  markInterrupted(at: number): number {
+  markInterrupted(at: number): RunRecord[] {
     const reason = "the daemon stopped during the run";
     const unfinished = "status IN ('running', 'queued')";
     this.db.prepare(`UPDATE steps SET status = 'interrupted' WHERE ${unfinished}`).run();
-    const r = this.db
-      .prepare(`UPDATE runs SET status = 'interrupted', reason = ?, finished_at = ? WHERE ${unfinished}`)
-      .run(reason, at);
-    return Number(r.changes);
+    return this.db
+      .prepare(`UPDATE runs SET status = 'interrupted', reason = ?, finished_at = ? WHERE ${unfinished} RETURNING *`)
+      .all(reason, at)
+      .map(toRun)
+      .sort((x, y) => x.id - y.id);
+  }
+
+  /**
+   * How the latest run of the cascade before `beforeId` that got to an outcome ended
+   * (`success`, `warning`, `failed` or `interrupted`; skipped and cancelled runs say nothing about the cascade).
+   */
+  previousOutcome(cascade: string, beforeId: number): RunState | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT status FROM runs WHERE cascade = ? AND id < ?
+           AND status IN ('success', 'warning', 'failed', 'interrupted') ORDER BY id DESC LIMIT 1`,
+      )
+      .get(cascade, beforeId);
+    return row === undefined ? undefined : (String(row.status) as RunState);
   }
 
   /**

@@ -461,9 +461,21 @@ describe("stopping and repo state", () => {
     const left = store.insertRun({ cascade: "c", trigger: "schedule", status: "queued", startedAt: 1 });
     store.saveStep({ runId: left.id, index: 0, type: "check", label: "check a", status: "running" });
     const done = store.insertRun({ cascade: "c", trigger: "schedule", status: "success", startedAt: 1, finishedAt: 2 });
-    expect(store.markInterrupted(10)).toBe(1);
+    expect(store.markInterrupted(10)).toMatchObject([{ id: left.id, status: "interrupted", reason: "the daemon stopped during the run" }]);
     expect(store.run(left.id)).toMatchObject({ status: "interrupted", finishedAt: 10, steps: [{ status: "interrupted" }] });
     expect(store.run(done.id)?.status).toBe("success");
+  });
+
+  it("finds the previous outcome of a cascade, ignoring skipped and cancelled runs", () => {
+    const at = { trigger: "schedule" as const, startedAt: 1, finishedAt: 2 };
+    store.insertRun({ cascade: "c", status: "failed", ...at });
+    store.insertRun({ cascade: "other", status: "success", ...at });
+    store.insertRun({ cascade: "c", status: "skipped", ...at });
+    store.insertRun({ cascade: "c", status: "cancelled", ...at });
+    const last = store.insertRun({ cascade: "c", status: "success", ...at });
+    expect(store.previousOutcome("c", last.id)).toBe("failed");
+    expect(store.previousOutcome("c", last.id + 1)).toBe("success");
+    expect(store.previousOutcome("other", 1)).toBeUndefined();
   });
 });
 

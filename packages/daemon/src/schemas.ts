@@ -274,6 +274,13 @@ const Reload = {
   required: ["at", "ok", "errors"],
 } as const;
 
+const NotificationTest = {
+  $id: "NotificationTest",
+  type: "object",
+  properties: { sentAt: { ...epochMs, description: "When Telegram took the message" } },
+  required: ["sentAt"],
+} as const;
+
 const Status = {
   $id: "Status",
   type: "object",
@@ -431,6 +438,7 @@ export const schemas = [
   Repo,
   RepoCheck,
   Reload,
+  NotificationTest,
   Status,
   Summary,
   Snapshot,
