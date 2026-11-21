@@ -242,8 +242,8 @@ describe("the CLI through the daemon", () => {
     });
     const target = path.join(fake.dir, "restore", "dddddddd");
     const r = await cli(["restore", "a", "dddddddd", "/host/etc"]);
-    expect(r.stderr).toBe("");
-    expect(r.code).toBe(0);
+    // the whole result: on a failure stdout tells why the run did not succeed
+    expect(r).toMatchObject({ code: 0, stderr: "" });
     const lines = r.stdout.trim().split("\n");
     expect(lines[0]).toMatch(new RegExp(String.raw`^run \d+ \(restore of dddddddd from "a" into ${target}\) started$`));
     expect(lines).toContain(`==> [1/1] restore dddddddd (/host/etc) from a -> ${target}`);
