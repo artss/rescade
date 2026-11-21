@@ -141,7 +141,17 @@ export const NotificationSchema = z.strictObject({
   type: z.literal("telegram", { error: 'type must be "telegram"' }),
   token: z.string().min(1),
   chat: z.union([z.string().min(1), z.number().int()]).transform((v) => String(v)),
-  thread: z.number().int().positive().optional(),
+  // A string too, so the topic can come from `${VAR}`: an empty one (or a placeholder for an unset one) means no topic.
+  thread: z
+    .union([z.number(), z.string()])
+    .transform((v, ctx) => {
+      if (v === "" || (typeof v === "string" && /^<\w+ is unset>$/.test(v))) return undefined;
+      const n = typeof v === "number" ? v : /^\d+$/.test(v) ? Number(v) : NaN;
+      if (Number.isSafeInteger(n) && n > 0) return n;
+      ctx.addIssue({ code: "custom", message: "thread must be a positive integer" });
+      return z.NEVER;
+    })
+    .optional(),
   events: z
     .array(z.enum(NOTIFY_EVENTS, { error: `expected one of: ${NOTIFY_EVENTS.join(", ")}` }))
     .min(1, "list at least one event or leave events out for the default ones")
