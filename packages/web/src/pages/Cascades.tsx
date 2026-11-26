@@ -1,8 +1,8 @@
-import { mdiChevronRight, mdiPlayOutline } from "@mdi/js";
+import { mdiChevronRight, mdiPlayOutline, mdiReplay } from "@mdi/js";
 import { useId, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { formatDuration } from "../format.js";
-import { useCascades, useStartRun } from "../queries.js";
+import { canRerunLast, useCascades, useRerun, useStartRun } from "../queries.js";
 import { stepDetails } from "../steps.js";
 import type { CascadeStep, CascadeView } from "../types.js";
 import { Badge } from "../components/Badge.js";
@@ -25,6 +25,7 @@ export function CascadesPage() {
 
 function CascadeCard({ cascade: c }: { cascade: CascadeView }) {
   const start = useStartRun();
+  const rerun = useRerun();
   const [, navigate] = useLocation();
   const [skipped, setSkipped] = useState<string>();
   const [stepsOpen, setStepsOpen] = useState(false);
@@ -35,6 +36,14 @@ function CascadeCard({ cascade: c }: { cascade: CascadeView }) {
       onSuccess: (r) => (r.status === "skipped" ? setSkipped(r.reason ?? "skipped") : navigate(`/runs/${r.id}`)),
     });
   };
+  const rerunLast = (id: number) => {
+    setSkipped(undefined);
+    rerun.mutate(id, {
+      onSuccess: (r) => (r.status === "skipped" ? setSkipped(r.reason ?? "skipped") : navigate(`/runs/${r.id}`)),
+    });
+  };
+  const pending = start.isPending || rerun.isPending;
+  const error = start.error ?? rerun.error;
   const busy = c.onBusy === "wait" ? `wait${c.waitTimeoutMs === null ? "" : ` up to ${formatDuration(c.waitTimeoutMs)}`}` : "skip";
 
   return (
@@ -56,13 +65,28 @@ function CascadeCard({ cascade: c }: { cascade: CascadeView }) {
           >
             Running
           </Link>
+        ) : c.lastRun && canRerunLast(c.lastRun) ? (
+          <div className="flex flex-col items-end gap-1">
+            <Button icon={mdiReplay} onClick={() => rerunLast(c.lastRun!.id)} disabled={pending} aria-label={`Rerun ${c.name} from failed`}>
+              Rerun from failed
+            </Button>
+            <button
+              type="button"
+              onClick={run}
+              disabled={pending}
+              aria-label={`Run ${c.name} from start`}
+              className="text-sm text-accent hover:underline disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Run from start
+            </button>
+          </div>
         ) : (
-          <Button icon={mdiPlayOutline} onClick={run} disabled={start.isPending} aria-label={`Run ${c.name}`}>
+          <Button icon={mdiPlayOutline} onClick={run} disabled={pending} aria-label={`Run ${c.name}`}>
             Run
           </Button>
         )}
       </div>
-      {start.error && <div className="mt-2"><ErrorBox error={start.error} /></div>}
+      {error && <div className="mt-2"><ErrorBox error={error} /></div>}
       {skipped && <p className="mt-2 text-sm text-amber-700 dark:text-amber-400">Skipped: {skipped}</p>}
 
       <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm sm:grid-cols-[auto_1fr_auto_1fr]">

@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -174,6 +174,54 @@ describe("cascades and runs", () => {
     } finally {
       await writeFile(path.join(inject("fakeDir"), "release"), "");
     }
+  });
+});
+
+describe("cascade card after a failed run", () => {
+  const release = () => path.join(inject("fakeDir"), "release");
+  /** Waits until the daemon has the run finished. */
+  const settled = (id: number) =>
+    waitFor(async () => expect((await api<RunRecord>("GET", `/runs/${id}`)).status).not.toMatch(/^(queued|running)$/), wait);
+
+  it("offers a rerun from the failed step and a run from the start", async () => {
+    await rm(release(), { force: true });
+    try {
+      const first = await api<RunRecord>("POST", "/cascades/slow/run");
+      await api("POST", `/runs/${first.id}/cancel`);
+      await settled(first.id);
+
+      // a run from the start is a plain new run
+      const view = renderApp("/");
+      expect(await screen.findByRole("button", { name: "Rerun slow from failed" }, wait)).toBeDefined();
+      expect(screen.queryByRole("button", { name: "Run slow" })).toBeNull();
+      expect(screen.getByRole("button", { name: "Run daily" })).toBeDefined();
+      fireEvent.click(screen.getByRole("button", { name: "Run slow from start" }));
+      await waitFor(() => expect(location.pathname).toMatch(/^\/runs\/\d+$/), wait);
+      const second = await api<RunRecord>("GET", location.pathname);
+      expect(second.id).not.toBe(first.id);
+      expect(second.rerunOf).toBeUndefined();
+      await api("POST", `/runs/${second.id}/cancel`);
+      await settled(second.id);
+      view.unmount();
+
+      // the rerun starts again from the failed step of the last run
+      renderApp("/");
+      await writeFile(release(), "");
+      fireEvent.click(await screen.findByRole("button", { name: "Rerun slow from failed" }, wait));
+      await waitFor(() => expect(location.pathname).not.toBe("/"), wait);
+      const third = await api<RunRecord>("GET", location.pathname);
+      expect(third).toMatchObject({ cascade: "slow", rerunOf: second.id, fromStep: 0 });
+      await settled(third.id);
+      expect(await screen.findByRole("heading", { name: `Run ${third.id} of slow` }, wait)).toBeDefined();
+    } finally {
+      await writeFile(release(), "");
+    }
+  });
+
+  it("offers a plain run after a successful one", async () => {
+    renderApp("/");
+    expect(await screen.findByRole("button", { name: "Run slow" }, wait)).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Rerun slow from failed" })).toBeNull();
   });
 });
 

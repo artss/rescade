@@ -30,7 +30,7 @@ API под `/api`, остальные пути отдают собранный �
 `/api/repos/:name/snapshots[/:id/ls]`, CLI `snapshots` и `ls`, страница репо `pages/Repo.tsx` (состояние и снапшоты, ссылка с имени на `/repos`),
 снапшот деревом `components/SnapshotTree.tsx` (`@headless-tree`, подгрузка каталога при раскрытии, чекбоксы для restore, логика выбора в `selection.ts`); у шага backup поле
 `repo`, схема базы v2 с миграцией в `Store.open`). Бэкенды restic (`src/config/backends.ts`: префикс `path`, опции по бэкенду, конфликты `env`/`options` в парах
-`copy`/`from`; описание в `docs/backends.md`). 316 тестов vitest (проекты `node` и `web`), фейковый restic в `packages/core/test/fake-restic.mjs`, 9 интеграционных с настоящим restic
+`copy`/`from`; описание в `docs/backends.md`). 318 тестов vitest (проекты `node` и `web`), фейковый restic в `packages/core/test/fake-restic.mjs`, 9 интеграционных с настоящим restic
 (проверено на 0.19.1), пример в `examples/config`.
 
 Шаги 1–7 из DESIGN.md сделаны. Шаг 8: `Dockerfile`, `.github/workflows/ci.yaml` (тесты, затем образ
@@ -45,7 +45,8 @@ API под `/api`, остальные пути отдают собранный �
 
 Повтор с проваленного шага (см. DESIGN.md): `rerunFrom` и `Runner.rerun` (`src/run/runner.ts`), `fromStep` в `runCascade`,
 схема базы v4 (`rerun_of`, `from_step`), `POST /api/runs/:id/rerun`, CLI `rerun`, кнопка Rerun from failed на странице запуска
-(`canRerun` в `queries.ts`; проверку меток шагов делает только демон).
+(`canRerun` в `queries.ts`; проверку меток шагов делает только демон), на карточке каскада после `failed`/`cancelled`/`interrupted`
+она же вместо Run и под ней ссылка Run from start (`canRerunLast`: шагов последнего запуска у карточки нет, поэтому без `skipped`).
 
 Перезагрузка конфига без перезапуска: SIGHUP, `POST /api/reload` (200 с `{ at, ok, errors }`, перезагрузки
 по одной), CLI `reload`, пункт Reload config в меню шапки веба (`HeaderMenu` в `Layout.tsx`, там же Sign out; версия демона и ссылка на GitHub в футере).

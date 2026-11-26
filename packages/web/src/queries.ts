@@ -159,5 +159,12 @@ export const useRerun = () =>
 export const canRerun = (run: RunWithSteps) =>
   run.cascade !== undefined && ["failed", "cancelled", "interrupted", "skipped"].includes(run.status) && run.steps.length > 0;
 
+/**
+ * Whether a cascade card offers a rerun of its last run instead of a plain Run. The card has no steps of the run, so
+ * `skipped` is left out: such a run usually never started (the cascade was busy).
+ */
+export const canRerunLast = (run: RunRecord | null) =>
+  run !== null && ["failed", "cancelled", "interrupted"].includes(run.status);
+
 export const useCancelRun = () =>
   useMutation({ mutationFn: (id: number) => request<{ cancelling: boolean }>("POST", `/runs/${id}/cancel`) });
